@@ -1,0 +1,1 @@
+{"get": "fixtures", "parameters": {"league": "78", "date": "2026-05-02", "season": "2024"}, "errors": {"plan": "Free plans do not have access to this date, try from 2026-04-28 to 2026-04-30."}, "results": 0, "paging": {"current": 1, "total": 1}, "response": []}
