@@ -14,6 +14,7 @@ import requests
 
 from football_agent.adapters.http_utils import apply_api_key, get_json, normalize_match_list, unwrap_dict_payload
 from football_agent.flashscore.adapters.base import FlashscoreScraperAdapter
+from football_agent.flashscore.raw_enrich import enrich_http_flashscore_raw
 from football_agent.flashscore.adapters.errors import (
     FlashscoreScraperConfigurationError,
     FlashscoreScraperError,
@@ -115,7 +116,7 @@ class HttpFlashscoreScraperAdapter(FlashscoreScraperAdapter):
         raw = unwrap_dict_payload(data)
         if not raw:
             raise FlashscoreScraperError("Empty scraper response")
-        out = dict(raw)
+        out = enrich_http_flashscore_raw(dict(raw))
         out.setdefault("scraper_backend_name", "http")
         out.setdefault("collected_at_utc", datetime.now(timezone.utc).isoformat())
         return out

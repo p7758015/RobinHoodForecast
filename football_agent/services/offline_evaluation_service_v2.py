@@ -2,6 +2,14 @@
 Offline evaluation service over persisted analysis runs.
 
 No future leakage: reads only stored artifacts + final match_results.
+
+Typical Stage 1 offline flow
+-----------------------------
+1. Batch persist scored runs (fixtures) via
+   ``offline.v2_calibration_runner.run_v2_batch_persist_from_fixtures``
+   or CLI ``python -m football_agent.offline.v2_calibrate --mode batch-persist ...``
+2. Ensure ``match_results`` rows exist for the same identities (batch can save them)
+3. ``OfflineEvaluationServiceV2.evaluate(...)`` for settled coverage / join metrics
 """
 
 from __future__ import annotations
@@ -37,6 +45,7 @@ class OfflineEvaluationServiceV2:
             )
         )
 
+        scored_runs_total = len(rows)
         runs: List[dict] = []
         for r in rows:
             snap = r.snapshot_json or {}
@@ -71,6 +80,7 @@ class OfflineEvaluationServiceV2:
 
         report = evaluate_best_market_runs(
             runs,
+            scored_runs_total=scored_runs_total,
             exact_lookup=self._repo.fetch_match_result_exact,
             date_lookup=self._repo.fetch_match_results_for_date,
         )

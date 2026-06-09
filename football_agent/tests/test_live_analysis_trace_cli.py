@@ -74,7 +74,7 @@ def test_main_openclaw_fail_continues_exit_0(tmp_path: Path) -> None:
             ):
                 with patch.object(
                     live_analysis_trace,
-                    "_fetch_openclaw_context",
+                    "fetch_openclaw_context_for_facts",
                     return_value=(
                         None,
                         {"openclaw": "failed"},

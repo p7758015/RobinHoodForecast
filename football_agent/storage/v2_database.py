@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from football_agent.domain.models_v2 import MatchPredictionResultV2
 from football_agent.paths import DEFAULT_DB_PATH, ensure_runtime_dirs
+from football_agent.storage.sqlite_runtime import open_sqlite_connection
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +130,7 @@ class V2Database:
         path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = str(path)
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = open_sqlite_connection(self.db_path)
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:

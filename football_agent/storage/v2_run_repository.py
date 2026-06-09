@@ -18,9 +18,13 @@ from typing import Any, Dict, Optional
 
 from football_agent.analysis_merge.models import MergedMatchAnalysisContext
 from football_agent.domain.models_v2 import MatchAnalysisSnapshotV2, MatchPredictionResultV2
-from football_agent.normalizers.merged_snapshot_builder_v2 import BuildReport
+from football_agent.normalizers.merged_snapshot_builder_v2 import (
+    BuildReport,
+    _competition_code_from_flashscore,
+)
 from football_agent.paths import DEFAULT_DB_PATH, ensure_runtime_dirs
 from football_agent.storage.match_key import build_match_key_from_merged
+from football_agent.storage.sqlite_runtime import open_sqlite_connection
 from football_agent.storage.v2_database import (
     CREATE_ANALYSIS_BUILD_REPORTS_V2,
     CREATE_ANALYSIS_MERGED_CONTEXT_V2,
@@ -34,6 +38,28 @@ from football_agent.storage.v2_database import (
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _competition_code_from_merged(merged: MergedMatchAnalysisContext) -> str:
+    """Stable code using the same derivation as MergedSnapshotBuilderV2."""
+    name = (
+        merged.flashscore_facts.meta.competition_name
+        or merged.headline.competition_name
+        or ""
+    )
+    return _competition_code_from_flashscore(name)
+
+
+def _run_header_from_merged(merged: MergedMatchAnalysisContext) -> tuple[str, Optional[str], str, str]:
+    """Extract run header fields aligned with snapshot builder inputs."""
+    kickoff = merged.headline.kickoff_utc or merged.flashscore_facts.meta.kickoff_utc
+    kickoff_iso = kickoff.isoformat() if kickoff else None
+    return (
+        _competition_code_from_merged(merged),
+        kickoff_iso,
+        merged.headline.home_team,
+        merged.headline.away_team,
+    )
 
 
 @dataclass(frozen=True)
@@ -55,8 +81,7 @@ class AnalysisRunRepositoryV2:
         path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = str(path)
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = open_sqlite_connection(self.db_path)
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
@@ -75,7 +100,7 @@ class AnalysisRunRepositoryV2:
     # Write API (staged)
     # ---------------------------------------------------------------------
 
-    def create_run_from_merged(self, merged: MergedMatchAnalysisContext) -> str:
+    def create_run_from_merged(self, merged: MergedMatchAnalysisContext, *, commit: bool = True) -> str:
         run_id = str(uuid.uuid4())
         match_key = build_match_key_from_merged(merged)
         now = _utc_now().isoformat()
@@ -106,6 +131,8 @@ class AnalysisRunRepositoryV2:
             ),
         )
 
+        comp_code, kickoff_iso, home_team, away_team = _run_header_from_merged(merged)
+
         self.conn.execute(
             """
             INSERT INTO analysis_runs_v2
@@ -126,14 +153,15 @@ class AnalysisRunRepositoryV2:
                 len(merged.provenance.missing_blocks),
                 str(merged.provenance.match_link_strategy),
                 str(merged.provenance.odds_link_strategy),
-                merged.flashscore_facts.meta.competition_name,
-                merged.headline.kickoff_utc.isoformat() if merged.headline.kickoff_utc else None,
-                merged.headline.home_team,
-                merged.headline.away_team,
+                comp_code,
+                kickoff_iso,
+                home_team,
+                away_team,
             ),
         )
 
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return run_id
 
     def attach_snapshot_and_report(
@@ -143,6 +171,7 @@ class AnalysisRunRepositoryV2:
         merged: MergedMatchAnalysisContext,
         snapshot: MatchAnalysisSnapshotV2,
         report: BuildReport,
+        commit: bool = True,
     ) -> None:
         match_key = build_match_key_from_merged(merged)
         now = _utc_now().isoformat()
@@ -189,6 +218,11 @@ class AnalysisRunRepositoryV2:
             ),
         )
 
+        kickoff_iso = (
+            snapshot.match_meta.match_date_utc.isoformat()
+            if snapshot.match_meta.match_date_utc
+            else None
+        )
         self.conn.execute(
             """
             UPDATE analysis_runs_v2
@@ -206,13 +240,14 @@ class AnalysisRunRepositoryV2:
                 snapshot_id,
                 snapshot.match_meta.match_id,
                 snapshot.match_meta.competition_code,
-                snapshot.match_meta.match_date_utc.isoformat(),
+                kickoff_iso,
                 snapshot.match_meta.home_team.name,
                 snapshot.match_meta.away_team.name,
                 run_id,
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def attach_prediction(
         self,
@@ -220,6 +255,7 @@ class AnalysisRunRepositoryV2:
         *,
         prediction: MatchPredictionResultV2,
         scoring_warnings: list[str],
+        commit: bool = True,
     ) -> None:
         now = _utc_now().isoformat()
         pred_id = str(uuid.uuid4())
@@ -253,7 +289,44 @@ class AnalysisRunRepositoryV2:
             "UPDATE analysis_runs_v2 SET run_status=?, prediction_id=? WHERE run_id=?",
             ("scored", pred_id, run_id),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
+
+    def persist_scored_run_atomic(
+        self,
+        *,
+        merged: MergedMatchAnalysisContext,
+        snapshot: MatchAnalysisSnapshotV2,
+        report: BuildReport,
+        prediction: MatchPredictionResultV2,
+        scoring_warnings: list[str],
+    ) -> str:
+        """
+        Atomically persist merged -> snapshot/report -> prediction.
+
+        Rolls back all writes on any intermediate failure (no orphan rows).
+        """
+        self.conn.execute("BEGIN")
+        try:
+            run_id = self.create_run_from_merged(merged, commit=False)
+            self.attach_snapshot_and_report(
+                run_id,
+                merged=merged,
+                snapshot=snapshot,
+                report=report,
+                commit=False,
+            )
+            self.attach_prediction(
+                run_id,
+                prediction=prediction,
+                scoring_warnings=scoring_warnings,
+                commit=False,
+            )
+            self.conn.commit()
+            return run_id
+        except Exception:
+            self.conn.rollback()
+            raise
 
     # ---------------------------------------------------------------------
     # Read API

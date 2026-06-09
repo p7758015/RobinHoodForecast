@@ -14,6 +14,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parent
 # Runtime data (SQLite, snapshots) — canonical location per original project layout
 DATA_DIR = PACKAGE_ROOT / "data"
 SNAPSHOTS_DIR = DATA_DIR / "snapshots"
+# Debug/live Flashscore fixture exports (CLI ``flashscore_trace``)
+FLASHSCORE_FIXTURES_DEBUG_DIR = DATA_DIR / "flashscore_fixtures"
 
 # API response cache (md5 JSON files)
 CACHE_DIR = PACKAGE_ROOT / "cache"

@@ -1,0 +1,22 @@
+{
+  "fixture_id": "odds_botola_sample_match_3",
+  "match_id": "Sfgk1gCs",
+  "backend_name": "fixture",
+  "backend_version": "1",
+  "home_team": "FAR Rabat",
+  "away_team": "Maghreb Fez",
+  "competition_name": "Botola Pro",
+  "kickoff_utc": "2026-06-09T23:00:00+00:00",
+  "collected_at_utc": "2026-06-09T12:00:00+00:00",
+  "source_url": "https://example.invalid/odds/odds_botola_sample_match_3",
+  "markets": {
+    "home_win": { "odds_value": 2.35, "bookmaker_name": "BotolaBook" },
+    "away_win": { "odds_value": 2.90, "bookmaker_name": "BotolaBook" },
+    "double_chance_1x": 1.38,
+    "double_chance_x2": 1.55,
+    "btts_yes": 1.78,
+    "home_team_to_score_yes": 1.30,
+    "away_team_to_score_yes": 1.35,
+    "over_1_5": 1.25
+  }
+}

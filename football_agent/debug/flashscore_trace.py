@@ -1,12 +1,17 @@
 """
 Flashscore league smoke/debug trace for normalized facts.
 
-This tool:
+Fixture mode (offline):
 - reads raw Flashscore payloads via a fixture-based adapter
 - maps them into FlashscoreMatchFacts
 - prints compact completeness summary per match
 
-It does NOT call v2 snapshots / scorers / OpenClaw / legacy APIs.
+Live/debug mode (HTTP scraper):
+- fetches raw match data via HttpFlashscoreScraperAdapter
+- exports fixture-compatible JSON for batch-persist / offline flows
+- optionally prints facts summary
+
+Does NOT call v2 snapshots / scorers / OpenClaw / legacy APIs / Telegram.
 """
 
 from __future__ import annotations
@@ -15,12 +20,20 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from football_agent import config
 from football_agent.flashscore.adapters.gustavofaria_backend import FixtureFileFlashscoreAdapter
+from football_agent.flashscore.adapters.http_backend import HttpFlashscoreScraperAdapter
 from football_agent.flashscore.derived_season import LeagueTableMotivationContext, derive_season_motivation
+from football_agent.flashscore.fixture_export import (
+    coerce_raw_to_fixture_record,
+    default_fixture_stem,
+    write_fixture_json,
+)
 from football_agent.flashscore.models import FlashscoreMatchFacts
 from football_agent.flashscore.service import FlashscoreIngestionService
+from football_agent.paths import FLASHSCORE_FIXTURES_DEBUG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -202,22 +215,90 @@ def _print_summary(summary: Dict[str, Any], *, as_json: bool) -> None:
             print(f"- parsing_warnings: {p.get('parsing_warnings')}")
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="flashscore_trace",
-        description="Debug normalized Flashscore facts from fixture-based backend.",
+def _resolve_scraper_url(cli_url: Optional[str]) -> Optional[str]:
+    return (cli_url or config.FLASHSCORE_SCRAPER_URL or "").strip().rstrip("/") or None
+
+
+def _fetch_live_raw(
+    match_ref: str,
+    *,
+    scraper_url: str,
+    api_key: Optional[str] = None,
+    timeout_s: Optional[float] = None,
+) -> Dict[str, Any]:
+    adapter = HttpFlashscoreScraperAdapter(
+        scraper_url,
+        api_key=api_key or config.FLASHSCORE_SCRAPER_API_KEY,
+        timeout_s=timeout_s if timeout_s is not None else config.FLASHSCORE_SCRAPER_TIMEOUT_S,
     )
-    parser.add_argument("--fixtures-dir", type=str, required=True, help="Directory with Flashscore raw JSON fixtures.")
-    parser.add_argument("--date", type=str, help="YYYY-MM-DD for batch mode.")
-    parser.add_argument("--competition", type=str, help="Optional competition code (e.g. SA, PL).")
-    parser.add_argument("--match-id", type=str, help="Single match id / filename stem.")
-    parser.add_argument("--json", action="store_true", help="Output JSON instead of text.")
-    parser.add_argument("--max", type=int, default=3, help="Max matches to show for date listing.")
+    return adapter.fetch_match_raw(match_ref)
 
-    args = parser.parse_args(list(argv) if argv is not None else None)
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+def run_live_fixture_export(
+    match_ref: str,
+    *,
+    scraper_url: str,
+    output_dir: Path,
+    fixture_stem: Optional[str] = None,
+    api_key: Optional[str] = None,
+    timeout_s: Optional[float] = None,
+    save_fixture: bool = True,
+) -> Tuple[Dict[str, Any], Optional[Path], FlashscoreMatchFacts]:
+    """
+    Fetch live raw data, coerce to fixture JSON, optionally save, return facts.
 
+    ``match_ref`` may be a Flashscore URL or match id.
+    """
+    raw = _fetch_live_raw(
+        match_ref,
+        scraper_url=scraper_url,
+        api_key=api_key,
+        timeout_s=timeout_s,
+    )
+    record = coerce_raw_to_fixture_record(raw)
+    stem = (fixture_stem or default_fixture_stem(record)).strip()
+    saved_path: Optional[Path] = None
+
+    if save_fixture:
+        saved_path = write_fixture_json(output_dir / f"{stem}.json", record)
+        service = FlashscoreIngestionService(FixtureFileFlashscoreAdapter(output_dir))
+        facts = service.get_facts_for_match(stem)
+    else:
+        service = FlashscoreIngestionService(FixtureFileFlashscoreAdapter(output_dir))
+        facts = service._map_raw_to_facts(record)  # type: ignore[attr-defined]
+
+    if facts is None:
+        raise RuntimeError("Failed to map exported fixture to FlashscoreMatchFacts")
+
+    return record, saved_path, facts
+
+
+def _print_live_result(
+    *,
+    record: Dict[str, Any],
+    saved_path: Optional[Path],
+    facts: FlashscoreMatchFacts,
+    as_json: bool,
+    include_summary: bool,
+) -> None:
+    if as_json:
+        payload: Dict[str, Any] = {"fixture": record}
+        if saved_path is not None:
+            payload["saved_path"] = str(saved_path)
+            payload["fixture_stem"] = saved_path.stem
+        if include_summary:
+            payload["facts_summary"] = build_facts_summary(facts)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if saved_path is not None:
+        print(f"Saved fixture: {saved_path}")
+        print(f"Fixture stem for batch-persist: {saved_path.stem}")
+        print("")
+    _print_summary(build_facts_summary(facts), as_json=False)
+
+
+def _run_fixture_mode(args: argparse.Namespace) -> int:
     fixtures_dir = Path(args.fixtures_dir)
     if not fixtures_dir.exists():
         logger.error("Fixtures dir %s does not exist", fixtures_dir)
@@ -235,7 +316,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
 
     if not args.date:
-        logger.error("Either --match-id or --date must be provided.")
+        logger.error("Either --match-id or --date must be provided for fixture mode.")
         return 2
 
     facts_list: List[FlashscoreMatchFacts] = service.get_facts_for_date(args.date, competition_code=args.competition)
@@ -254,6 +335,100 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return 0
 
 
+def _run_live_mode(args: argparse.Namespace) -> int:
+    scraper_url = _resolve_scraper_url(args.flashscore_url)
+    if not scraper_url:
+        logger.error(
+            "Live mode requires FLASHSCORE_SCRAPER_URL in .env or --flashscore-url.",
+        )
+        return 2
+
+    match_ref = (args.match_url or args.match_id or "").strip()
+    if not match_ref:
+        logger.error("Live mode requires --match-url or --match-id.")
+        return 2
+
+    output_dir = Path(args.output_dir) if args.output_dir else FLASHSCORE_FIXTURES_DEBUG_DIR
+
+    try:
+        record, saved_path, facts = run_live_fixture_export(
+            match_ref,
+            scraper_url=scraper_url,
+            output_dir=output_dir,
+            fixture_stem=args.fixture_stem,
+            save_fixture=not args.no_save,
+        )
+    except Exception as exc:
+        logger.error("Live Flashscore ingestion failed: %s", exc)
+        return 1
+
+    _print_live_result(
+        record=record,
+        saved_path=saved_path,
+        facts=facts,
+        as_json=args.json,
+        include_summary=not args.fixture_only,
+    )
+    return 0
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="flashscore_trace",
+        description="Debug Flashscore facts from fixtures or live HTTP scraper.",
+    )
+    parser.add_argument(
+        "--fixtures-dir",
+        type=str,
+        help="Directory with Flashscore raw JSON fixtures (offline mode).",
+    )
+    parser.add_argument("--date", type=str, help="YYYY-MM-DD for fixture batch mode.")
+    parser.add_argument("--competition", type=str, help="Optional competition code (e.g. SA, PL).")
+    parser.add_argument("--match-id", type=str, help="Match id / filename stem (fixture or live).")
+    parser.add_argument("--match-url", type=str, help="Flashscore match URL (live HTTP mode).")
+    parser.add_argument(
+        "--flashscore-url",
+        type=str,
+        help="Override FLASHSCORE_SCRAPER_URL (live mode).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        help=f"Where to save exported fixture JSON (default: {FLASHSCORE_FIXTURES_DEBUG_DIR}).",
+    )
+    parser.add_argument(
+        "--fixture-stem",
+        type=str,
+        help="Output filename stem without .json (default: flashscore_<match_id>).",
+    )
+    parser.add_argument("--no-save", action="store_true", help="Live mode: do not write fixture file.")
+    parser.add_argument(
+        "--fixture-only",
+        action="store_true",
+        help="With --json: emit fixture record only (no facts_summary).",
+    )
+    parser.add_argument("--json", action="store_true", help="Output JSON instead of text.")
+    parser.add_argument("--max", type=int, default=3, help="Max matches to show for date listing.")
+
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    live_requested = bool(args.match_url) or (bool(args.match_id) and not args.fixtures_dir and not args.date)
+
+    if live_requested:
+        return _run_live_mode(args)
+
+    if args.fixtures_dir:
+        return _run_fixture_mode(args)
+
+    if args.match_id or args.date:
+        logger.error("Fixture mode requires --fixtures-dir.")
+        return 2
+
+    parser.print_help()
+    return 2
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
-

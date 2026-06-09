@@ -33,14 +33,14 @@ from football_agent.normalizers.merged_snapshot_builder_v2 import MergedSnapshot
 from football_agent.normalizers.team_name_resolver import score_team_query
 from football_agent.odds.adapters.fixture_backend import FixtureFileOddsAdapter
 from football_agent.odds.service import OddsIngestionService
-from football_agent.openclaw_context.adapters.errors import (
-    OpenClawContextError,
-    OpenClawContextUnavailableError,
+from football_agent.services.odds_live import fetch_odds_for_facts
+from football_agent.services.openclaw_context_live import (
+    fetch_openclaw_context_for_facts,
+    resolve_openclaw_context_url,
 )
-from football_agent.openclaw_context.adapters.http_backend import HttpOpenClawContextAdapter
-from football_agent.openclaw_context.service import OpenClawContextIngestionService
 from football_agent.services.persistence_service_v2 import SnapshotPersistenceServiceV2
 from football_agent.services.scoring_service_v2 import ScoringServiceV2
+from football_agent.services.source_completeness import build_completeness_report
 from football_agent.storage.match_key import build_match_key_from_merged
 
 logger = logging.getLogger(__name__)
@@ -48,12 +48,6 @@ logger = logging.getLogger(__name__)
 
 def _resolve_flashscore_url(cli_url: Optional[str]) -> Optional[str]:
     return (cli_url or config.FLASHSCORE_SCRAPER_URL or "").strip() or None
-
-
-def _resolve_openclaw_url(cli_url: Optional[str], *, skip: bool) -> Optional[str]:
-    if skip:
-        return None
-    return (cli_url or config.OPENCLAW_CONTEXT_BASE_URL or "").strip() or None
 
 
 def _pick_facts_by_teams(
@@ -126,54 +120,6 @@ def _fetch_flashscore_facts(
     return facts, {"flashscore": "ok"}
 
 
-def _fetch_openclaw_context(
-    oc_url: Optional[str],
-    facts: FlashscoreMatchFacts,
-    *,
-    api_key: Optional[str],
-    home_cli: Optional[str],
-    away_cli: Optional[str],
-    date_cli: Optional[str],
-    competition_cli: Optional[str],
-) -> Tuple[Optional[Any], Dict[str, str], List[str]]:
-    warnings: List[str] = []
-    if not oc_url:
-        return None, {"openclaw": "skipped"}, warnings
-
-    home = home_cli or facts.meta.home_team_name
-    away = away_cli or facts.meta.away_team_name
-    kickoff = facts.meta.kickoff_utc.isoformat() if facts.meta.kickoff_utc else None
-    date_str = date_cli
-    if not date_str and facts.meta.kickoff_utc:
-        date_str = facts.meta.kickoff_utc.date().isoformat()
-
-    token = HttpOpenClawContextAdapter.build_query_token(
-        home=home,
-        away=away,
-        date=date_str,
-        competition=competition_cli,
-        competition_name=facts.meta.competition_name,
-        kickoff_utc=kickoff,
-    )
-
-    try:
-        adapter = HttpOpenClawContextAdapter(
-            oc_url,
-            api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
-            timeout_s=config.OPENCLAW_CONTEXT_TIMEOUT_S,
-        )
-        ctx = OpenClawContextIngestionService(adapter).get_context_for_fixture(token)
-        if ctx is None:
-            warnings.append("openclaw_context_empty_response")
-            return None, {"openclaw": "failed"}, warnings
-        return ctx, {"openclaw": "ok"}, warnings
-    except (OpenClawContextUnavailableError, OpenClawContextError) as e:
-        msg = str(e)
-        warnings.append(f"openclaw_context_fetch_failed: {msg}")
-        logger.warning("OpenClaw context fetch failed (continuing): %s", msg)
-        return None, {"openclaw": "failed"}, warnings
-
-
 def _fetch_odds_fixture(
     fixtures_dir: Optional[Path],
     odds_fixture: Optional[str],
@@ -196,10 +142,25 @@ def build_live_summary(
     source_warnings: List[str],
     run_id: Optional[str],
     match_key: Optional[str],
+    facts: Optional[FlashscoreMatchFacts] = None,
+    openclaw_ctx=None,
+    odds_ctx=None,
+    openclaw_link: Optional[str] = None,
+    odds_link: Optional[str] = None,
 ) -> Dict[str, Any]:
     summary = build_scoring_summary(scored_run)
     summary["sources"] = dict(sources)
     summary["source_warnings"] = list(source_warnings)
+    if facts is not None:
+        summary["completeness"] = build_completeness_report(
+            facts=facts,
+            sources=sources,
+            warnings=source_warnings,
+            openclaw_ctx=openclaw_ctx,
+            odds_ctx=odds_ctx,
+            openclaw_link=openclaw_link,
+            odds_link=odds_link,
+        ).to_debug_dict()
     if run_id:
         summary["run_id"] = run_id
     if match_key:
@@ -276,23 +237,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     sources: Dict[str, str] = dict(src)
-    oc_url = _resolve_openclaw_url(args.openclaw_url, skip=args.skip_openclaw)
-    oc_ctx, oc_src, oc_warnings = _fetch_openclaw_context(
-        oc_url,
+    oc_ctx, oc_src, oc_warnings = fetch_openclaw_context_for_facts(
         facts,
+        openclaw_url=resolve_openclaw_context_url(args.openclaw_url, skip=args.skip_openclaw),
         api_key=args.openclaw_api_key,
-        home_cli=home,
-        away_cli=away,
-        date_cli=date_str,
-        competition_cli=args.competition,
+        skip=args.skip_openclaw,
+        home_override=home,
+        away_override=away,
+        date_override=date_str,
+        competition_override=args.competition,
     )
     sources.update(oc_src)
     source_warnings.extend(oc_warnings)
 
     fixtures_dir = Path(args.fixtures_dir) if args.fixtures_dir else None
-    odds_ctx, odds_src = _fetch_odds_fixture(fixtures_dir, args.odds_fixture)
+    if args.odds_fixture:
+        odds_ctx, odds_src = _fetch_odds_fixture(fixtures_dir, args.odds_fixture)
+        source_warnings_list: List[str] = []
+    else:
+        odds_ctx, odds_src, source_warnings_list = fetch_odds_for_facts(
+            facts,
+            home_override=home,
+            away_override=away,
+            date_override=date_str,
+            competition_override=args.competition,
+            match_url_override=match_url,
+        )
     sources.update(odds_src)
-    if odds_src.get("odds") == "failed":
+    source_warnings.extend(source_warnings_list)
+    if odds_src.get("odds") == "failed" and args.odds_fixture:
         source_warnings.append(f"odds_fixture_failed: {odds_src.get('odds_error')}")
 
     merged = merge_match_context_v2(facts=facts, openclaw_context=oc_ctx, odds_context=odds_ctx)
@@ -315,6 +288,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         source_warnings=source_warnings,
         run_id=run_id,
         match_key=match_key,
+        facts=facts,
+        openclaw_ctx=oc_ctx,
+        odds_ctx=odds_ctx,
+        openclaw_link=report.openclaw_link_strategy,
+        odds_link=report.odds_link_strategy,
     )
 
     if args.json:

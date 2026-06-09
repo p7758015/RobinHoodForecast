@@ -1,0 +1,22 @@
+{
+  "fixture_id": "odds_botola_sample_match",
+  "match_id": "dC2J6FlK",
+  "backend_name": "fixture",
+  "backend_version": "1",
+  "home_team": "Kawkab Marrakech",
+  "away_team": "Raja Casablanca",
+  "competition_name": "Botola Pro",
+  "kickoff_utc": "2026-06-09T21:00:00+00:00",
+  "collected_at_utc": "2026-06-09T12:00:00+00:00",
+  "source_url": "https://example.invalid/odds/odds_botola_sample_match",
+  "markets": {
+    "home_win": { "odds_value": 4.75, "bookmaker_name": "BotolaBook" },
+    "away_win": { "odds_value": 1.72, "bookmaker_name": "BotolaBook" },
+    "double_chance_1x": 1.95,
+    "double_chance_x2": 1.18,
+    "btts_yes": 1.85,
+    "home_team_to_score_yes": 1.62,
+    "away_team_to_score_yes": 1.22,
+    "over_1_5": 1.28
+  }
+}

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from football_agent.flashscore.adapters.base import FlashscoreScraperAdapter
+from football_agent.flashscore.raw_enrich import assess_block_signals, enrich_http_flashscore_raw
 from football_agent.flashscore.models import (
     FlashscoreFormBlock,
     FlashscoreH2HBlock,
@@ -55,6 +56,16 @@ class FlashscoreIngestionService:
     # Raw → normalized mapping                                           #
     # ------------------------------------------------------------------ #
 
+    _PROVENANCE_BLOCK_NAMES = {
+        "standings": "standings",
+        "season_context": "season_context_inputs",
+        "form": "form",
+        "h2h": "h2h",
+        "squad_raw": "squad_raw",
+        "schedule_raw": "schedule_raw",
+        "stats_raw": "stats_raw",
+    }
+
     def _map_raw_to_facts(self, raw: Dict[str, Any]) -> FlashscoreMatchFacts:
         """
         Map one raw scraper record into FlashscoreMatchFacts.
@@ -62,35 +73,38 @@ class FlashscoreIngestionService:
         The raw shape is backend-specific; here we expect a dict with keys similar to
         what a Flashscore-oriented scraper would output. Missing keys are tolerated.
         """
+        raw = enrich_http_flashscore_raw(raw)
+        signals = assess_block_signals(raw)
 
         meta = self._map_meta(raw)
-        standings = self._map_standings(raw.get("standings") or {})
-        season_ctx = self._map_season_context(raw.get("season_context") or {})
-        form = self._map_form(raw.get("form") or {})
-        h2h = self._map_h2h(raw.get("h2h") or {})
-        squad = self._map_squad(raw.get("squad_raw") or {})
-        schedule = self._map_schedule(raw.get("schedule_raw") or {})
-        stats = self._map_stats(raw.get("stats_raw") or {})
+        standings = self._map_standings(raw.get("standings") or {}) if signals["standings"] else None
+        season_ctx = (
+            self._map_season_context(raw.get("season_context") or {})
+            if signals["season_context"]
+            else None
+        )
+        form = self._map_form(raw.get("form") or {}) if signals["form"] else None
+        h2h = self._map_h2h(raw.get("h2h") or {}) if signals["h2h"] else None
+        squad = self._map_squad(raw.get("squad_raw") or {}) if signals["squad_raw"] else None
+        schedule = self._map_schedule(raw.get("schedule_raw") or {}) if signals["schedule_raw"] else None
+        stats = self._map_stats(raw.get("stats_raw") or {}) if signals["stats_raw"] else None
 
-        present_blocks: List[str] = []
-        missing_blocks: List[str] = []
-        parsing_warnings: List[str] = []
-
-        def mark_block(name: str, value: object) -> None:
-            (present_blocks if value is not None else missing_blocks).append(name)
-
-        mark_block("standings", standings)
-        mark_block("season_context_inputs", season_ctx)
-        mark_block("form", form)
-        mark_block("h2h", h2h)
-        mark_block("squad_raw", squad)
-        mark_block("schedule_raw", schedule)
-        mark_block("stats_raw", stats)
+        present_blocks = [
+            self._PROVENANCE_BLOCK_NAMES[k]
+            for k, ok in signals.items()
+            if ok
+        ]
+        missing_blocks = [
+            self._PROVENANCE_BLOCK_NAMES[k]
+            for k, ok in signals.items()
+            if not ok
+        ]
+        parsing_warnings: List[str] = list(raw.get("enrichment_warnings") or [])
 
         provenance = FlashscoreProvenance(
             scraper_backend_name=str(raw.get("scraper_backend_name") or "fixture"),
             scraper_backend_version=raw.get("scraper_backend_version"),
-            adapter_version="flashscore-facts-v1",
+            adapter_version="flashscore-facts-v2",
             collected_at_utc=self._safe_dt(raw.get("collected_at_utc")),
             blocks_present=present_blocks,
             missing_blocks=missing_blocks,
@@ -117,7 +131,9 @@ class FlashscoreIngestionService:
 
     @staticmethod
     def _map_meta(raw: Dict[str, Any]) -> FlashscoreMeta:
-        return FlashscoreMeta(
+        from football_agent.services.competition_classifier import refine_meta_tournament_type
+
+        meta = FlashscoreMeta(
             match_id=str(raw.get("match_id") or raw.get("id") or ""),
             source_url=str(raw.get("source_url") or ""),
             competition_name=str(raw.get("competition_name") or raw.get("league_name") or "Unknown competition"),
@@ -131,6 +147,7 @@ class FlashscoreIngestionService:
             away_team_name=str(raw.get("away_team_name") or raw.get("away") or ""),
             status=str(raw.get("status") or "SCHEDULED"),
         )
+        return refine_meta_tournament_type(meta)
 
     @staticmethod
     def _parse_tournament_type(value: Any):

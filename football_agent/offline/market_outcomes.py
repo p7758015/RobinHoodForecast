@@ -16,10 +16,18 @@ V2_MARKET_KEYS = (
 )
 
 
-def v2_market_is_win(market_key: str, home_score: int, away_score: int) -> Optional[bool]:
+def evaluate_market_outcome(market_key: str, home_score: int, away_score: int) -> Optional[bool]:
     """
-    Return True/False for known markets, None if market_key is unknown.
-    OVER_1_5: total goals > 1.5 (i.e. >= 2).
+    Canonical v2 market settlement against final scores.
+
+    Returns:
+    - ``True`` if the market wins
+    - ``False`` if the market loses
+    - ``None`` if ``market_key`` is unknown / not settlement-compatible
+
+  Notes:
+    - ``HOME_NOT_LOSE`` / ``AWAY_NOT_LOSE``: draw counts as win (1X / X2).
+    - ``OVER_1_5``: total goals >= 2.
     """
     total = home_score + away_score
     if market_key == "HOME_WIN":
@@ -39,3 +47,8 @@ def v2_market_is_win(market_key: str, home_score: int, away_score: int) -> Optio
     if market_key == "OVER_1_5":
         return total >= 2
     return None
+
+
+def v2_market_is_win(market_key: str, home_score: int, away_score: int) -> Optional[bool]:
+    """Flat calibration path alias for :func:`evaluate_market_outcome`."""
+    return evaluate_market_outcome(market_key, home_score, away_score)

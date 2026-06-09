@@ -25,19 +25,13 @@ class SnapshotPersistenceServiceV2:
         merged: MergedMatchAnalysisContext,
         scored: ScoredRunV2,
     ) -> str:
-        run_id = self._repo.create_run_from_merged(merged)
-        self._repo.attach_snapshot_and_report(
-            run_id,
+        return self._repo.persist_scored_run_atomic(
             merged=merged,
             snapshot=scored.snapshot,
             report=scored.build_report,
-        )
-        self._repo.attach_prediction(
-            run_id,
             prediction=scored.prediction,
             scoring_warnings=list(scored.scoring_warnings),
         )
-        return run_id
 
     def load_run(self, run_id: str):
         return self._repo.load_run(run_id)

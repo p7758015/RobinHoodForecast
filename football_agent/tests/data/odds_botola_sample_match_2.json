@@ -1,0 +1,22 @@
+{
+  "fixture_id": "odds_botola_sample_match_2",
+  "match_id": "dhCPpYR0",
+  "backend_name": "fixture",
+  "backend_version": "1",
+  "home_team": "COD Meknes",
+  "away_team": "Yacoub El Mansour",
+  "competition_name": "Botola Pro",
+  "kickoff_utc": "2026-06-09T19:00:00+00:00",
+  "collected_at_utc": "2026-06-09T12:00:00+00:00",
+  "source_url": "https://example.invalid/odds/odds_botola_sample_match_2",
+  "markets": {
+    "home_win": { "odds_value": 2.05, "bookmaker_name": "BotolaBook" },
+    "away_win": { "odds_value": 3.60, "bookmaker_name": "BotolaBook" },
+    "double_chance_1x": 1.28,
+    "double_chance_x2": 1.75,
+    "btts_yes": 1.90,
+    "home_team_to_score_yes": 1.25,
+    "away_team_to_score_yes": 1.45,
+    "over_1_5": 1.32
+  }
+}
