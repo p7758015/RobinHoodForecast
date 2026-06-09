@@ -2,9 +2,11 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Optional
 
 from football_agent.domain.models import MatchAnalysisResult
+from football_agent.paths import DEFAULT_DB_PATH, ensure_runtime_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +56,12 @@ CREATE TABLE IF NOT EXISTS prediction_outcomes (
 
 
 class Database:
-    def __init__(self, db_path: str = "data/football_agent.db"):
-        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+    def __init__(self, db_path: str | os.PathLike[str] | None = None):
+        ensure_runtime_dirs()
+        path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = str(path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._create_tables()
 

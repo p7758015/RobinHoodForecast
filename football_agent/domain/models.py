@@ -69,6 +69,10 @@ class Odds(BaseModel):
     home_not_lose: Optional[float] = None  # Double Chance 1X
     away_not_lose: Optional[float] = None  # Double Chance X2
     btts_yes: Optional[float] = None
+    # v2 extended (optional; v1 pipeline ignores)
+    home_team_to_score: Optional[float] = None
+    away_team_to_score: Optional[float] = None
+    over_15: Optional[float] = None
 
 
 class MarketPrediction(BaseModel):

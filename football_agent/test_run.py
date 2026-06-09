@@ -54,7 +54,7 @@ def test_calculate_motivation() -> None:
     standings = _mk_standings("PL")
 
     # Team near relegation zone should have high survival motivation
-    m, eliminated, fighting = calculate_motivation(
+    m, eliminated, fighting, _warnings = calculate_motivation(
         position=19,
         points=20,
         played_rounds=34,
@@ -67,7 +67,7 @@ def test_calculate_motivation() -> None:
     assert eliminated in (True, False)
 
     # Mid-table should fallback to baseline 0.2/0.3
-    m2, eliminated2, fighting2 = calculate_motivation(
+    m2, eliminated2, fighting2, _warnings2 = calculate_motivation(
         position=10,
         points=45,
         played_rounds=34,

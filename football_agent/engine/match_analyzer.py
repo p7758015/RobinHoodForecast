@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
-from football_agent.config import LEAGUE_IDS_API_FOOTBALL, TOTAL_ROUNDS, CURRENT_SEASON
+from football_agent.config import CURRENT_SEASON
+from football_agent.league_registry import resolve_league_params
 from football_agent.data_providers.api_football_client import ApiFootballClient
 from football_agent.data_providers.football_data_client import FootballDataClient
 from football_agent.domain.features import (
@@ -59,8 +60,17 @@ def analyze_matches_for_date(
         # 4. played_rounds = max(s.played_games for s in standings)
         played_rounds = max(s.played_games for s in standings)
 
-        # 5. g = compute_season_progress(...)
-        g = compute_season_progress(played_rounds, TOTAL_ROUNDS[code])
+        league_params = resolve_league_params(code)
+        total_rounds = league_params.total_rounds
+        if total_rounds is None:
+            logger.warning(
+                "Season progress unavailable for %s: %s",
+                code,
+                "unknown_total_rounds_for_competition",
+            )
+            g = 0.5
+        else:
+            g = compute_season_progress(played_rounds, total_rounds)
 
         # 6. wM, wF, wC = compute_weights(g)
         wM, wF, wC = compute_weights(g)
@@ -100,19 +110,19 @@ def analyze_matches_for_date(
                 h2h_stats = calculate_h2h_stats(h2h_matches, home_id)
 
                 # Motivation
-                M_h, elim_h, fight_h = calculate_motivation(
+                M_h, elim_h, fight_h, _ = calculate_motivation(
                     position=home_entry.position,
                     points=home_entry.points,
                     played_rounds=played_rounds,
-                    total_rounds=TOTAL_ROUNDS[code],
+                    total_rounds=total_rounds,
                     standings=standings,
                     competition_code=code,
                 )
-                M_a, elim_a, fight_a = calculate_motivation(
+                M_a, elim_a, fight_a, _ = calculate_motivation(
                     position=away_entry.position,
                     points=away_entry.points,
                     played_rounds=played_rounds,
-                    total_rounds=TOTAL_ROUNDS[code],
+                    total_rounds=total_rounds,
                     standings=standings,
                     competition_code=code,
                 )
@@ -133,7 +143,7 @@ def analyze_matches_for_date(
                 probs = compute_market_probabilities(R_home, R_away, avg_gf_home, avg_gf_away, h2h_stats)
 
                 # Odds via API-Football
-                league_id = LEAGUE_IDS_API_FOOTBALL.get(code)
+                league_id = league_params.api_football_league_id
                 odds = None
                 if league_id is not None:
                     fixture_id = af_client.find_fixture_id(

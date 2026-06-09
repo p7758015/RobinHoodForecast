@@ -3,31 +3,62 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional, Tuple
 
-from football_agent.config import EURO_SLOTS, RELEGATION_SLOTS
 from football_agent.domain.models import CoachMatch, H2HStats, MatchResult, StandingEntry
+from football_agent.league_registry import UNKNOWN_TOTAL_ROUNDS_WARNING, resolve_league_params
 
 
 def calculate_motivation(
     position: int,
     points: int,
     played_rounds: int,
-    total_rounds: int,
+    total_rounds: Optional[int],
     standings: List[StandingEntry],
     competition_code: str,
-) -> Tuple[float, bool, bool]:
-    """Возвращает (motivation, eliminated, is_fighting)"""
+) -> Tuple[float, bool, bool, List[str]]:
+    """Returns (motivation, eliminated, is_fighting, derivation_warnings)."""
+
+    warnings: List[str] = []
+    params = resolve_league_params(competition_code)
+    rel_slots = params.relegation_slots
+    euro_cfg = params.euro_slots
+    euro_slots = euro_cfg["ucl"] + euro_cfg["uel"]
 
     total_teams = len(standings)
-    games_remaining = total_rounds - played_rounds
-    max_pts = points + 3 * games_remaining
-
-    rel_slots = RELEGATION_SLOTS[competition_code]
-    euro_cfg = EURO_SLOTS[competition_code]
-    euro_slots = euro_cfg["ucl"] + euro_cfg["uel"]
 
     def pts_at(pos: int) -> int:
         entry = next((s for s in standings if s.position == pos), None)
         return entry.points if entry else 0
+
+    if total_rounds is None:
+        warnings.append(UNKNOWN_TOTAL_ROUNDS_WARNING)
+        relz_border = total_teams - rel_slots + 1
+        border_pts = pts_at(relz_border)
+        survival_motivation = 0.0
+        if position >= relz_border:
+            survival_motivation = 1.0
+        elif (relz_border - 3) <= position < relz_border:
+            diff = points - border_pts
+            survival_motivation = max(0.5, min(0.9, 1.0 - diff / 3.0))
+
+        euro_border_pts = pts_at(euro_slots)
+        euro_motivation = 0.0
+        if position <= euro_slots:
+            pts_to_drop = points - euro_border_pts
+            euro_motivation = max(0.5, min(1.0, 0.5 + (3 - pts_to_drop) * 0.1))
+        elif position <= euro_slots + 5:
+            diff = euro_border_pts - points
+            euro_motivation = max(0.4, min(0.9, 1.0 - diff / 5.0))
+
+        raw = max(survival_motivation, euro_motivation)
+        is_fighting = raw > 0.3
+        if raw == 0.0:
+            motivation = 0.2 if (5 < position < total_teams - 4) else 0.3
+        else:
+            motivation = raw
+        return motivation, False, is_fighting, warnings
+
+    games_remaining = total_rounds - played_rounds
+    max_pts = points + 3 * games_remaining
 
     # --- Зона вылета ---
     relz_border = total_teams - rel_slots + 1
@@ -62,7 +93,7 @@ def calculate_motivation(
     else:
         motivation = raw
 
-    return motivation, eliminated, is_fighting
+    return motivation, eliminated, is_fighting, warnings
 
 
 def calculate_coach_strength(
@@ -192,4 +223,3 @@ def calculate_h2h_stats(
         btts_rate=round(btts / total, 3),
         over25_rate=round(over25 / total, 3),
     )
-

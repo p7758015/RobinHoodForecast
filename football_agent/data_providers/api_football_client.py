@@ -18,7 +18,9 @@ from typing import Any, List, Optional
 import requests
 
 from football_agent import config
+from football_agent.data_providers.odds_utils import count_odds_fields, merge_odds, seasons_to_try
 from football_agent.domain.models import Odds
+from football_agent.paths import CACHE_DIR, ensure_runtime_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,150 @@ def _normalize_team_name(name: str) -> str:
     s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def _norm_bet_value(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _pick_odd_from_values(values: list, *accepted: str) -> Optional[float]:
+    accepted_set = {_norm_bet_value(a) for a in accepted}
+    for v in values or []:
+        if not isinstance(v, dict):
+            continue
+        if _norm_bet_value(str(v.get("value") or "")) in accepted_set:
+            return _to_float(v.get("odd"))
+    return None
+
+
+def _bet_by_names(bets_by_name: dict, *names: str) -> Optional[dict]:
+    for name in names:
+        bet = bets_by_name.get(name)
+        if bet:
+            return bet
+    return None
+
+
+def _parse_match_winner(bets_by_name: dict) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    mw = _bet_by_names(bets_by_name, "Match Winner", "1x2", "Full Time Result")
+    if not mw:
+        return None, None, None
+    home = draw = away = None
+    for v in mw.get("values") or []:
+        if not isinstance(v, dict):
+            continue
+        val = _norm_bet_value(str(v.get("value") or ""))
+        odd = _to_float(v.get("odd"))
+        if odd is None:
+            continue
+        if val in ("home", "1", "team 1"):
+            home = odd
+        elif val in ("draw", "x"):
+            draw = odd
+        elif val in ("away", "2", "team 2"):
+            away = odd
+    return home, draw, away
+
+
+def _parse_double_chance(bets_by_name: dict) -> tuple[Optional[float], Optional[float]]:
+    dc = _bet_by_names(bets_by_name, "Double Chance")
+    if not dc:
+        return None, None
+    home_dc = away_dc = None
+    for v in dc.get("values") or []:
+        if not isinstance(v, dict):
+            continue
+        val = _norm_bet_value(str(v.get("value") or ""))
+        odd = _to_float(v.get("odd"))
+        if odd is None:
+            continue
+        if val in ("home/draw", "1x", "1/x", "home or draw", "home & draw"):
+            home_dc = odd
+        elif val in ("draw/away", "x2", "x/2", "away or draw", "away & draw", "draw/away"):
+            away_dc = odd
+    return home_dc, away_dc
+
+
+def _parse_btts_yes(bets_by_name: dict) -> Optional[float]:
+    btts = _bet_by_names(
+        bets_by_name,
+        "Both Teams Score",
+        "Both Teams To Score",
+        "Both teams to score",
+        "BTTS",
+    )
+    if not btts:
+        return None
+    return _pick_odd_from_values(btts.get("values") or [], "yes")
+
+
+def _parse_bookmaker_bets(bets: list, fixture_id: int) -> Odds:
+    bets_by_name = {b.get("name"): b for b in bets if isinstance(b, dict) and b.get("name")}
+    o = Odds(fixture_id=fixture_id)
+    hw, dr, aw = _parse_match_winner(bets_by_name)
+    if hw is not None:
+        o.home_win = hw
+    if dr is not None:
+        o.draw = dr
+    if aw is not None:
+        o.away_win = aw
+    hnl, anl = _parse_double_chance(bets_by_name)
+    if hnl is not None:
+        o.home_not_lose = hnl
+    if anl is not None:
+        o.away_not_lose = anl
+    btts = _parse_btts_yes(bets_by_name)
+    if btts is not None:
+        o.btts_yes = btts
+    over15 = _parse_over_15(bets_by_name)
+    if over15 is not None:
+        o.over_15 = over15
+    hts = _parse_team_to_score_yes(bets_by_name, "home")
+    if hts is not None:
+        o.home_team_to_score = hts
+    ats = _parse_team_to_score_yes(bets_by_name, "away")
+    if ats is not None:
+        o.away_team_to_score = ats
+    return o
+
+
+def _parse_over_15(bets_by_name: dict) -> Optional[float]:
+    for bet_name in ("Goals Over/Under", "Total Goals", "Goal Line"):
+        bet = bets_by_name.get(bet_name)
+        if not bet:
+            continue
+        odd = _pick_odd_from_values(bet.get("values") or [], "over 1.5", "over 1.5 goals")
+        if odd is not None:
+            return odd
+    return None
+
+
+def _parse_team_to_score_yes(bets_by_name: dict, side: str) -> Optional[float]:
+    if side == "home":
+        direct_names = ("Home Team Score a Goal", "Home Team To Score", "Home To Score")
+        team_val = ("home", "home team", "1", "team 1")
+    else:
+        direct_names = ("Away Team Score a Goal", "Away Team To Score", "Away To Score")
+        team_val = ("away", "away team", "2", "team 2")
+
+    for name in direct_names:
+        bet = bets_by_name.get(name)
+        if bet:
+            odd = _pick_odd_from_values(bet.get("values") or [], "yes")
+            if odd is not None:
+                return odd
+
+    tts = bets_by_name.get("Team To Score")
+    if tts:
+        for v in tts.get("values") or []:
+            if not isinstance(v, dict):
+                continue
+            val = _norm_bet_value(str(v.get("value") or ""))
+            if val in team_val or (side == "home" and val == "home") or (side == "away" and val == "away"):
+                odd = _to_float(v.get("odd"))
+                if odd is not None:
+                    return odd
+    return None
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -46,8 +192,8 @@ class ApiFootballClient:
         self.base_url = config.API_FOOTBALL_BASE_URL
         self.cache_ttl_seconds = 12 * 3600
 
-        self._cache_dir = Path(__file__).resolve().parents[1] / "cache"
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        ensure_runtime_dirs()
+        self._cache_dir = CACHE_DIR
 
         self._session = requests.Session()
         self._session.headers.update({"x-apisports-key": self.api_key or ""})
@@ -109,8 +255,16 @@ class ApiFootballClient:
         logger.warning("Unexpected response type %s: %s", endpoint, type(data))
         return {}
 
-    def get_fixtures(self, league_id: int, date_str: str, season: int) -> List[dict]:
-        data = self._get("/fixtures", params={"league": league_id, "date": date_str, "season": season})
+    def get_fixtures(
+        self,
+        league_id: int,
+        date_str: str,
+        season: Optional[int] = None,
+    ) -> List[dict]:
+        params: dict = {"league": league_id, "date": date_str}
+        if season is not None:
+            params["season"] = season
+        data = self._get("/fixtures", params=params)
         resp = data.get("response")
         return resp if isinstance(resp, list) else []
 
@@ -123,58 +277,21 @@ class ApiFootballClient:
         entry = resp[0] if isinstance(resp, list) and resp else {}
         bookmakers = entry.get("bookmakers") or []
 
-        # Find first bookmaker that provides needed markets (not necessarily all)
+        merged = Odds(fixture_id=fixture_id)
         for bm in bookmakers:
             bets = bm.get("bets") or []
-            bets_by_name = {b.get("name"): b for b in bets if isinstance(b, dict)}
+            partial = _parse_bookmaker_bets(bets, fixture_id)
+            if count_odds_fields(partial) > 0:
+                merge_odds(merged, partial)
 
-            o = Odds(fixture_id=fixture_id)
-            found_any = False
-
-            mw = bets_by_name.get("Match Winner")
-            if mw:
-                for v in (mw.get("values") or []):
-                    val = str(v.get("value") or "")
-                    odd = _to_float(v.get("odd"))
-                    if odd is None:
-                        continue
-                    if val == "Home":
-                        o.home_win = odd
-                        found_any = True
-                    elif val == "Draw":
-                        o.draw = odd
-                        found_any = True
-                    elif val == "Away":
-                        o.away_win = odd
-                        found_any = True
-
-            dc = bets_by_name.get("Double Chance")
-            if dc:
-                for v in (dc.get("values") or []):
-                    val = str(v.get("value") or "")
-                    odd = _to_float(v.get("odd"))
-                    if odd is None:
-                        continue
-                    if val == "Home/Draw":
-                        o.home_not_lose = odd
-                        found_any = True
-                    elif val == "Draw/Away":
-                        o.away_not_lose = odd
-                        found_any = True
-
-            btts = bets_by_name.get("Both Teams Score")
-            if btts:
-                for v in (btts.get("values") or []):
-                    val = str(v.get("value") or "")
-                    odd = _to_float(v.get("odd"))
-                    if odd is None:
-                        continue
-                    if val == "Yes":
-                        o.btts_yes = odd
-                        found_any = True
-
-            if found_any:
-                return o
+        if count_odds_fields(merged) > 0:
+            logger.debug(
+                "Odds fixture %s: %s markets from %s bookmakers",
+                fixture_id,
+                count_odds_fields(merged),
+                len(bookmakers),
+            )
+            return merged
 
         return Odds(fixture_id=fixture_id)
 
@@ -185,15 +302,34 @@ class ApiFootballClient:
         date_str: str,
         league_id: int,
         season: int,
+        *,
+        seasons: Optional[List[int]] = None,
     ) -> Optional[int]:
-        fixtures = self.get_fixtures(league_id=league_id, date_str=date_str, season=season)
+        for try_season in seasons_to_try(*(seasons or []), season):
+            fid = self._find_fixture_id_in_fixtures(
+                home_name, away_name, self.get_fixtures(league_id, date_str, try_season)
+            )
+            if fid is not None:
+                return fid
+
+        # Date-only fallback (no season filter)
+        fid = self._find_fixture_id_in_fixtures(
+            home_name, away_name, self.get_fixtures(league_id, date_str, None)
+        )
+        return fid
+
+    @staticmethod
+    def _find_fixture_id_in_fixtures(
+        home_name: str,
+        away_name: str,
+        fixtures: List[dict],
+    ) -> Optional[int]:
         if not fixtures:
             return None
 
         target_home = _normalize_team_name(home_name)
         target_away = _normalize_team_name(away_name)
 
-        # Exact match first
         for f in fixtures:
             teams = f.get("teams") or {}
             home = (teams.get("home") or {}).get("name") or ""
@@ -203,7 +339,6 @@ class ApiFootballClient:
                 fid = fx.get("id")
                 return int(fid) if fid is not None else None
 
-        # Fuzzy match
         best_score = 0.0
         best_id: Optional[int] = None
 

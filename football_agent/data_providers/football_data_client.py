@@ -18,6 +18,7 @@ import requests
 
 from football_agent import config
 from football_agent.domain.models import CoachMatch, Match, MatchResult, StandingEntry, Team
+from football_agent.paths import CACHE_DIR, ensure_runtime_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ class FootballDataClient:
         self.request_delay = config.FOOTBALL_DATA_REQUEST_DELAY
         self.cache_ttl_seconds = config.CACHE_TTL_SECONDS
 
-        self._cache_dir = Path(__file__).resolve().parents[1] / "cache"
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        ensure_runtime_dirs()
+        self._cache_dir = CACHE_DIR
 
         self._session = requests.Session()
         self._session.headers.update({"X-Auth-Token": self.api_key or ""})
@@ -165,9 +166,23 @@ class FootballDataClient:
             matchday=_safe_int(m.get("matchday")),
         )
 
-    def get_matches_by_date(self, date_str: str) -> List[Match]:
+    def get_matches_by_date(
+        self,
+        date_str: str,
+        competition_codes: Optional[List[str]] = None,
+    ) -> List[Match]:
+        """
+        Scheduled matches for a date.
+
+        Discovery uses ``football_agent.league_registry.discovery_competition_codes`` when
+        ``competition_codes`` is omitted: registry-only by default, or ``LEAGUE_DISCOVERY_CODES``
+        env override. Auto-discovery of all world leagues never occurs.
+        """
+        from football_agent.league_registry import discovery_competition_codes
+
+        codes = competition_codes if competition_codes is not None else discovery_competition_codes()
         matches: List[Match] = []
-        for code in config.LEAGUE_IDS_FOOTBALL_DATA.keys():
+        for code in codes:
             data = self._get(
                 f"/competitions/{code}/matches",
                 params={"dateFrom": date_str, "dateTo": date_str, "status": "SCHEDULED"},
@@ -176,9 +191,16 @@ class FootballDataClient:
                 matches.append(self._parse_match(m, competition_code=code))
         return matches
 
-    def get_finished_matches_by_date(self, date_str: str) -> List[Match]:
+    def get_finished_matches_by_date(
+        self,
+        date_str: str,
+        competition_codes: Optional[List[str]] = None,
+    ) -> List[Match]:
+        from football_agent.league_registry import discovery_competition_codes
+
+        codes = competition_codes if competition_codes is not None else discovery_competition_codes()
         matches: List[Match] = []
-        for code in config.LEAGUE_IDS_FOOTBALL_DATA.keys():
+        for code in codes:
             data = self._get(
                 f"/competitions/{code}/matches",
                 params={"dateFrom": date_str, "dateTo": date_str, "status": "FINISHED"},

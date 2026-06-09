@@ -1,0 +1,122 @@
+{
+  "backend_name": "fixture",
+  "backend_version": "0.0.1",
+  "match_id": "ocx-0001",
+  "query_home_team": "AC Milan",
+  "query_away_team": "Juventus",
+  "query_home_team_normalized": "milan",
+  "query_away_team_normalized": "juventus",
+  "query_competition_name": "Serie A",
+  "query_date": "2025-11-29",
+  "query_kickoff_utc": "2025-11-29T17:30:00+00:00",
+  "query_string": "milan juventus 2025-11-29",
+  "collected_at_utc": "2025-11-28T20:00:00+00:00",
+  "context_window_hours": 72,
+  "news": {
+    "home_news_items": [
+      {
+        "title": "Key midfielder expected to return",
+        "summary": "Training in full; likely to start.",
+        "source_name": "Gazzetta",
+        "source_url": "https://example.com/gazzetta/123",
+        "published_at": "2025-11-28T10:00:00+00:00",
+        "reliability_level": "HIGH",
+        "topic_tags": ["injury", "returning"],
+        "affects_team": "HOME"
+      }
+    ],
+    "match_news_items": [
+      {
+        "title": "Derby-like atmosphere expected",
+        "summary": "High pressure match for both teams.",
+        "source_name": "Sky",
+        "source_url": "https://example.com/sky/777",
+        "reliability_level": "MEDIUM",
+        "topic_tags": ["pressure"],
+        "affects_team": "BOTH"
+      }
+    ]
+  },
+  "squad_context": {
+    "home": {
+      "missing_players_context": [
+        {
+          "player_name": "Defender X",
+          "reason": "muscle injury",
+          "expected_impact": "starter",
+          "status": "OUT",
+          "source_name": "Club report",
+          "confidence": "HIGH"
+        }
+      ],
+      "expected_rotation_notes": ["Possible rest for one winger due to workload."],
+      "depth_risk_level": "MEDIUM",
+      "rotation_risk_level": "MEDIUM"
+    },
+    "away": {
+      "returning_players_context": [
+        {
+          "player_name": "Striker Y",
+          "reason": "recovered",
+          "expected_impact": "high",
+          "status": "RETURNING",
+          "source_name": "Press",
+          "confidence": "MEDIUM"
+        }
+      ],
+      "injury_notes": ["Two substitutes still doubtful."],
+      "depth_risk_level": "LOW",
+      "rotation_risk_level": "LOW"
+    }
+  },
+  "coach_context": {
+    "home": {
+      "coach_name": "Coach Home",
+      "tenure_summary": "Second season in charge.",
+      "style_summary": "High press and quick transitions.",
+      "recent_change_flag": false
+    },
+    "away": {
+      "coach_name": "Coach Away",
+      "tenure_summary": "New appointment this season.",
+      "pressure_summary": "Under scrutiny after recent results.",
+      "recent_change_flag": true
+    },
+    "matchup": {
+      "coach_vs_coach_summary": "Tactical duel expected.",
+      "confidence": "MEDIUM"
+    }
+  },
+  "motivation_narrative": {
+    "home": {
+      "primary_objective_summary": "Stay in UCL places.",
+      "must_win_narrative": "Important home fixture.",
+      "confidence": "MEDIUM"
+    },
+    "away": {
+      "primary_objective_summary": "Close the gap to top four.",
+      "pressure_summary": "Need response after last draw.",
+      "confidence": "LOW"
+    },
+    "matchwide": {
+      "public_narrative_summary": "Top match of the round.",
+      "confidence": "MEDIUM"
+    }
+  },
+  "fatigue_schedule_context": {
+    "home": {
+      "fatigue_summary": "Moderate fatigue; normal rest.",
+      "rotation_expectation_summary": "Limited rotation expected.",
+      "confidence": "MEDIUM"
+    },
+    "away": {
+      "travel_summary": "Short travel distance.",
+      "post_europe_risk_summary": "No midweek Europe game.",
+      "confidence": "HIGH"
+    }
+  },
+  "extraction_warnings": [
+    "away_news_items missing in fixture"
+  ]
+}
+

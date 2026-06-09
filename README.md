@@ -58,8 +58,34 @@ python settle_results.py --date 2026-04-25
 | `API_FOOTBALL_KEY` | API key для `API-Football` (API-Sports v3), заголовок `x-apisports-key` |
 | `OPENAI_API_KEY` | API key для OpenAI (используется только для parse/format) |
 
-## 6) Архитектура
+## 6) Структура проекта
 
+```
+RobinHoodForecast/
+  docs/                          # спецификации и blueprint’ы
+  football_agent/                # пакет приложения (канон)
+    paths.py                     # канонические пути data/cache/db
+    config.py
+    main.py, settle_results.py, test_run.py
+    cache/                       # кэш API (JSON)
+    data/                        # SQLite + snapshots (runtime)
+    bot/                         # Telegram
+    data_providers/              # клиенты API (v1)
+    domain/                      # модели, features, probability
+    engine/                      # analyze + express
+    storage/                     # SQLite
+    llm/                         # parse/format only
+    collectors/ normalizers/     # каркас v2 (пока пусто)
+    scorers/ services/
+```
+
+Подробнее: [docs/project_structure.md](docs/project_structure.md).
+
+**Важно:** рабочая БД — `football_agent/data/football_agent.db`, не корневая `data/`.
+
+## 7) Архитектура модулей
+
+- `paths.py`: канонические пути к `data/`, `cache/`, SQLite
 - `config.py`: ключи, базовые URL, словари лиг, параметры rate-limit и кэша, пороги экспресса
 - `data_providers/football_data_client.py`: клиент `football-data.org` с кэшем/TTL и throttling
 - `data_providers/api_football_client.py`: клиент `API-Football` с кэшем/TTL + odds parsing + fuzzy fixture match
@@ -71,7 +97,7 @@ python settle_results.py --date 2026-04-25
 - `storage/database.py`: SQLite-хранилище прогнозов, результатов, settle и отчёты
 - `llm/agent.py`: тонкий LLM-слой (parse/format)
 
-## 7) Лимиты API
+## 8) Лимиты API
 
 - `football-data.org` (free): **10 req/min** → ~6 секунд между запросами
 - `api-football` (free): **100 req/day** → кэш обязателен (TTL 12 часов)

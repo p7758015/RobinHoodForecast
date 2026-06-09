@@ -5,3 +5,14 @@ __pycache__/
 .idea/
 .vscode/
 *.pyc
+
+# Runtime data & cache (canonical paths under football_agent/)
+football_agent/cache/*.json
+football_agent/data/*.db
+football_agent/data/*.sqlite
+football_agent/data/snapshots/*
+!football_agent/data/snapshots/.gitkeep
+
+# Legacy root data/ (CWD artifact — see data/README.md)
+/data/*.db
+/data/*.sqlite
