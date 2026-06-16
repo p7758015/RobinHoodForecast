@@ -124,7 +124,7 @@ def test_pipeline_with_odds_and_openclaw(mock_enrich, mock_fs, _mock_url) -> Non
     result = LiveFlashscorePipeline(persist=False).analyze_flashscore_url("https://example.com/m")
 
     assert result.success is True
-    assert result.sources["odds"] == "ok"
+    assert result.sources["odds"] in ("ok", "partial")
     assert result.sources["openclaw"] == "ok"
     assert result.odds_link_strategy is not None
     assert result.scored_run is not None
@@ -316,9 +316,10 @@ def test_pipeline_rich_flashscore_enriched_raw(_mock_enrich, mock_fs, _mock_url)
     facts = svc._map_raw_to_facts(  # type: ignore[attr-defined]
         {
             "match_id": "rich1",
-            "home_team_name": "Home FC",
-            "away_team_name": "Away FC",
-            "competition_name": "Test League",
+            "source_url": "https://www.flashscore.com/match/?mid=rich1",
+            "home_team_name": "Kawkab Marrakech",
+            "away_team_name": "Raja Casablanca",
+            "competition_name": "Botola Pro",
             "home_form": ["W", "W", "D"],
             "away_form": ["L", "W"],
             "home_position": 2,

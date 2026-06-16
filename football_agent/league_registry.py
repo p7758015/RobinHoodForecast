@@ -2,9 +2,18 @@
 Central registry for domestic league competitions (league pipeline).
 
 Discovery policy (FootballDataClient):
-- ``LEAGUE_DISCOVERY_CODES`` env unset → discover only codes registered here.
+- ``LEAGUE_DISCOVERY_CODES`` env unset → discover only registry entries with
+  ``football_data_discoverable=True`` (legacy top-5 European leagues by default).
 - ``LEAGUE_DISCOVERY_CODES`` set (comma-separated) → discover only those codes.
 - Auto-discovery of all world leagues never happens under any configuration.
+
+Analysis / express policy (Stage 3 — competition-agnostic):
+- No hardcoded top-5-only express filter in code.
+- Allow/deny is controlled per ``LeagueConfig`` and optional env lists
+  (see ``competition_policy``): ``LEAGUE_ANALYSIS_ALLOWED_CODES``,
+  ``LEAGUE_EXPRESS_ALLOWED_CODES``, ``LEAGUE_DENY_CODES``.
+- Flashscore-derived codes (``FS_*``) and other registered non-FootballData leagues
+  (e.g. Botola) are first-class registry entries with ``football_data_discoverable=False``.
 """
 
 from __future__ import annotations
@@ -33,6 +42,11 @@ class LeagueConfig:
     total_rounds: Optional[int] = None
     relegation_slots: int = DEFAULT_RELEGATION_SLOTS
     euro_slots: Optional[EuroSlots] = None
+    # FootballData scheduled-match discovery (top-5 European codes by default).
+    football_data_discoverable: bool = True
+    # Product policy flags (overridable via env allow/deny lists).
+    analysis_allowed: bool = True
+    express_allowed: bool = True
 
 
 @dataclass(frozen=True)
@@ -85,6 +99,52 @@ _REGISTRY: Dict[str, LeagueConfig] = {
         api_football_league_id=135,
         total_rounds=38,
     ),
+    # Flashscore / live pipeline — not queried via FootballData discovery.
+    "FS_BOTOLA_PRO": LeagueConfig(
+        competition_code="FS_BOTOLA_PRO",
+        display_name="Botola Pro",
+        country="Morocco",
+        total_rounds=30,
+        football_data_discoverable=False,
+        analysis_allowed=True,
+        express_allowed=True,
+    ),
+    # Wave-1 live eval-pool (Flashscore-only discovery).
+    "FS_KAZAKHSTAN_PREMIER": LeagueConfig(
+        competition_code="FS_KAZAKHSTAN_PREMIER",
+        display_name="Kazakhstan Premier League",
+        country="Kazakhstan",
+        total_rounds=26,
+        football_data_discoverable=False,
+    ),
+    "FS_ESTONIA_MEISTRILIIGA": LeagueConfig(
+        competition_code="FS_ESTONIA_MEISTRILIIGA",
+        display_name="Meistriliiga",
+        country="Estonia",
+        total_rounds=36,
+        football_data_discoverable=False,
+    ),
+    "FS_ESTONIA_PREMIUM_LIIGA": LeagueConfig(
+        competition_code="FS_ESTONIA_PREMIUM_LIIGA",
+        display_name="Premium Liiga",
+        country="Estonia",
+        total_rounds=36,
+        football_data_discoverable=False,
+    ),
+    "FS_LATVIA_VIRSLIGA": LeagueConfig(
+        competition_code="FS_LATVIA_VIRSLIGA",
+        display_name="Virsliga",
+        country="Latvia",
+        total_rounds=36,
+        football_data_discoverable=False,
+    ),
+    "FS_BRAZIL_SERIE_B": LeagueConfig(
+        competition_code="FS_BRAZIL_SERIE_B",
+        display_name="Brazil Serie B",
+        country="Brazil",
+        total_rounds=38,
+        football_data_discoverable=False,
+    ),
 }
 
 
@@ -117,6 +177,18 @@ def list_registry_codes() -> List[str]:
     return sorted(_REGISTRY.keys())
 
 
+def registry_league_display_names_lower() -> frozenset[str]:
+    """Lowercased display names from the league registry (classifier hints)."""
+    return frozenset(cfg.display_name.strip().lower() for cfg in _REGISTRY.values() if cfg.display_name)
+
+
+def list_football_data_discovery_codes() -> List[str]:
+    """Registry codes eligible for FootballData scheduled-match discovery."""
+    return sorted(
+        code for code, cfg in _REGISTRY.items() if cfg.football_data_discoverable
+    )
+
+
 def resolve_league_params(competition_code: str) -> LeagueParams:
     code = _normalize_code(competition_code)
     cfg = _REGISTRY.get(code)
@@ -147,13 +219,14 @@ def discovery_competition_codes() -> List[str]:
     """
     Codes used by FootballDataClient match discovery.
 
-    - Env ``LEAGUE_DISCOVERY_CODES`` unset → all registry codes only.
+    - Env ``LEAGUE_DISCOVERY_CODES`` unset → registry entries with
+      ``football_data_discoverable=True`` only.
     - Env set → only comma-separated codes (uppercased), still no global auto-discovery.
     """
     env = (os.getenv("LEAGUE_DISCOVERY_CODES") or "").strip()
     if env:
         return [_normalize_code(part) for part in env.split(",") if part.strip()]
-    return list_registry_codes()
+    return list_football_data_discovery_codes()
 
 
 def register_league(config: LeagueConfig) -> None:

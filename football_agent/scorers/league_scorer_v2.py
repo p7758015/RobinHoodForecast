@@ -30,23 +30,14 @@ from football_agent.domain.models_v2 import (
     TeamScoringResultV2,
 )
 from football_agent.domain.probability_model import compute_market_probabilities
+from football_agent.scorers.league_factor_weights import (
+    ResolvedWeights,
+    resolve_season_phase,
+    resolve_weights_from_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Factor weights (sum ≈ 1.0 before H2H signed adjustment)
-# ---------------------------------------------------------------------------
-
-FACTOR_WEIGHTS: Dict[str, float] = {
-    "baseline_strength": 0.22,
-    "current_form": 0.20,
-    "motivation": 0.22,
-    "squad_availability": 0.14,
-    "coach_factor": 0.12,
-    "schedule_context": 0.10,
-}
-
-H2H_TOTAL_WEIGHT = 0.12  # signed bias applied on top of weighted sum
 HOME_ADVANTAGE = 0.04
 
 MARKET_KEYS: Tuple[str, ...] = tuple(m.value for m in LeagueMarketKey)
@@ -109,6 +100,7 @@ class _TeamInputs:
     coach: CoachContextV2
     schedule: ScheduleContextV2
     h2h_bias: float  # signed adjustment for this side
+    resolved_weights: ResolvedWeights
 
 
 class LeagueScorerV2:
@@ -117,6 +109,13 @@ class LeagueScorerV2:
     def score_snapshot(self, snapshot: MatchAnalysisSnapshotV2) -> MatchPredictionResultV2:
         conf = snapshot.confidence.overall_confidence_score
         season_g = snapshot.match_meta.season_progress
+        phase = resolve_season_phase(
+            season_phase=snapshot.match_meta.season_phase,
+            season_progress=float(season_g or 0.0),
+        )
+
+        home_weights = resolve_weights_from_snapshot(snapshot, side="home")
+        away_weights = resolve_weights_from_snapshot(snapshot, side="away")
 
         home_in = _TeamInputs(
             context=snapshot.home_team_context,
@@ -124,6 +123,7 @@ class LeagueScorerV2:
             coach=snapshot.home_coach,
             schedule=snapshot.home_schedule,
             h2h_bias=snapshot.h2h_context.h2h_context_bias,
+            resolved_weights=home_weights,
         )
         away_in = _TeamInputs(
             context=snapshot.away_team_context,
@@ -131,10 +131,11 @@ class LeagueScorerV2:
             coach=snapshot.away_coach,
             schedule=snapshot.away_schedule,
             h2h_bias=-snapshot.h2h_context.h2h_context_bias,
+            resolved_weights=away_weights,
         )
 
-        home_scoring = self._score_team(home_in, season_g, conf, is_home=True)
-        away_scoring = self._score_team(away_in, season_g, conf, is_home=False)
+        home_scoring = self._score_team(home_in, phase, conf, is_home=True)
+        away_scoring = self._score_team(away_in, phase, conf, is_home=False)
 
         r_home = home_scoring.factor_scores.total_score + HOME_ADVANTAGE
         r_away = away_scoring.factor_scores.total_score
@@ -158,6 +159,7 @@ class LeagueScorerV2:
             h2h_btts=snapshot.h2h_context.h2h_btts_rate,
             over25_rate=snapshot.h2h_context.h2h_over25_rate,
         )
+        probs = _confidence_calibrate_probabilities(probs, conf)
 
         book_odds = _book_odds_map(snapshot.odds)
         markets = self._build_market_predictions(probs, book_odds, conf)
@@ -207,23 +209,41 @@ class LeagueScorerV2:
     def _score_team(
         self,
         inp: _TeamInputs,
-        season_progress: float,
-        confidence: float,
+        season_phase,
+        overall_confidence: float,
         is_home: bool,
     ) -> TeamScoringResultV2:
         ctx = inp.context
         factors = LeagueFactorScoresV2(
             baseline_strength=_clip01(ctx.baseline_strength_score),
-            current_form=self._form_score(ctx),
+            current_form=self._form_score(ctx, inp.coach),
             motivation=_clip01(ctx.motivation.motivation_score),
-            squad_availability=self._squad_score(inp.squad, confidence),
+            squad_availability=self._squad_score(inp.squad, overall_confidence),
             coach_factor=self._coach_score(inp.coach),
             schedule_context=self._schedule_score(inp.schedule),
             h2h_context_bias=max(-0.3, min(0.3, inp.h2h_bias)),
         )
-        factors.total_score = self._compute_total_score(factors, season_progress, inp.h2h_bias)
+        if inp.coach.is_first_match:
+            factors.motivation = _clip01(factors.motivation + 0.05)
 
-        flags = self._make_summary_flags(inp, factors, confidence, is_home)
+        factors.total_score = self._compute_total_score(
+            factors,
+            inp.resolved_weights,
+            inp,
+            overall_confidence,
+        )
+
+        flags = self._make_summary_flags(inp, factors, overall_confidence, is_home)
+        if inp.resolved_weights.special_overrides_applied:
+            for tag in inp.resolved_weights.special_overrides_applied:
+                flag = {
+                    "new_coach_first_match": "new_coach",
+                    "new_coach_window": "coach_bounce_window",
+                    "pre_big_match": "pre_big_match_risk",
+                    "post_big_match": "post_big_match_fatigue",
+                }.get(tag)
+                if flag and flag not in flags:
+                    flags.append(flag)
         return TeamScoringResultV2(
             team=ctx.team,
             factor_scores=factors,
@@ -231,13 +251,30 @@ class LeagueScorerV2:
         )
 
     @staticmethod
-    def _form_score(ctx: TeamContextV2) -> float:
+    def _form_score(ctx: TeamContextV2, coach: CoachContextV2) -> float:
         f = ctx.form
+        venue_avg = (f.home_form_score + f.away_form_score) / 2.0
+        if coach.is_first_match:
+            return _clip01(
+                0.30 * f.last_5_form_score
+                + 0.15 * f.last_10_form_score
+                + 0.40 * f.form_under_current_coach
+                + 0.15 * venue_avg
+            )
+        if coach.is_new_coach_bounce_window or (
+            coach.matches_in_charge is not None and 2 <= coach.matches_in_charge <= 4
+        ):
+            return _clip01(
+                0.35 * f.last_5_form_score
+                + 0.15 * f.last_10_form_score
+                + 0.35 * f.form_under_current_coach
+                + 0.15 * venue_avg
+            )
         return _clip01(
             0.45 * f.last_5_form_score
             + 0.25 * f.last_10_form_score
             + 0.20 * f.form_under_current_coach
-            + 0.10 * ((f.home_form_score + f.away_form_score) / 2.0)
+            + 0.10 * venue_avg
         )
 
     @staticmethod
@@ -260,9 +297,11 @@ class LeagueScorerV2:
             + 0.20 * coach.coach_vs_opponent_coach_score
         )
         if coach.is_first_match:
-            base = min(1.0, base + 0.05)
-        elif coach.is_new_coach_bounce_window:
-            base = min(1.0, base + 0.03)
+            base = min(1.0, base + 0.12)
+        elif coach.is_new_coach_bounce_window or (
+            coach.matches_in_charge is not None and 2 <= coach.matches_in_charge <= 4
+        ):
+            base = min(1.0, base + 0.06)
         return _clip01(base)
 
     @staticmethod
@@ -280,13 +319,12 @@ class LeagueScorerV2:
     def _compute_total_score(
         self,
         factors: LeagueFactorScoresV2,
-        season_progress: float,
-        h2h_bias: float,
+        resolved: ResolvedWeights,
+        inp: _TeamInputs,
+        overall_confidence: float,
     ) -> float:
-        """Weighted sum + season-aware motivation + signed H2H."""
-        w = dict(FACTOR_WEIGHTS)
-        w["motivation"] *= 0.85 + 0.30 * season_progress
-
+        """Blueprint weighted sum: phase weights + confidence gating + schedule penalties."""
+        w = resolved.weights
         total = (
             w["baseline_strength"] * factors.baseline_strength
             + w["current_form"] * factors.current_form
@@ -294,9 +332,28 @@ class LeagueScorerV2:
             + w["squad_availability"] * factors.squad_availability
             + w["coach_factor"] * factors.coach_factor
             + w["schedule_context"] * factors.schedule_context
+            + w["h2h_context_bias"] * factors.h2h_context_bias
         )
-        total += H2H_TOTAL_WEIGHT * h2h_bias
+        total -= self._schedule_special_penalty(inp)
+        if inp.coach.is_first_match and inp.squad.starting_xi_confidence < 0.35:
+            total -= 0.03 * (1.0 - overall_confidence)
         return _clip01(total)
+
+    @staticmethod
+    def _schedule_special_penalty(inp: _TeamInputs) -> float:
+        sched = inp.schedule
+        penalty = 0.0
+        if sched.pre_big_match_preservation_risk >= 0.25:
+            penalty += 0.04 + 0.10 * sched.pre_big_match_preservation_risk
+            if sched.days_to_next_match is not None and sched.days_to_next_match <= 3:
+                penalty += 0.03
+        if sched.post_big_match_relaxation_risk >= 0.15:
+            penalty += 0.03 + 0.08 * sched.post_big_match_relaxation_risk
+            if sched.days_since_last_match is not None and sched.days_since_last_match <= 3:
+                penalty += 0.03
+        if sched.rotation_risk_score >= 0.55 and sched.pre_big_match_preservation_risk >= 0.2:
+            penalty += 0.02
+        return min(0.15, penalty)
 
     @staticmethod
     def _make_summary_flags(
@@ -323,6 +380,10 @@ class LeagueScorerV2:
             or inp.schedule.fixture_congestion_score >= 0.55
         ):
             flags.append("schedule_risk")
+        if inp.schedule.pre_big_match_preservation_risk >= 0.25:
+            flags.append("pre_big_match_risk")
+        if inp.schedule.post_big_match_relaxation_risk >= 0.15:
+            flags.append("post_big_match_fatigue")
         if confidence < 0.45:
             flags.append("low_confidence_data")
         if is_home:
@@ -478,6 +539,14 @@ class LeagueScorerV2:
 # ---------------------------------------------------------------------------
 # Helpers: snapshot → v1 probability inputs
 # ---------------------------------------------------------------------------
+
+
+def _confidence_calibrate_probabilities(probs: Dict[str, float], confidence: float) -> Dict[str, float]:
+    """Shrink extreme probabilities toward 0.5 when snapshot confidence is low."""
+    if confidence >= 0.65:
+        return probs
+    shrink = max(0.35, min(1.0, 0.35 + 0.65 * _clip01(confidence)))
+    return {k: round(_clip01(0.5 + (float(p) - 0.5) * shrink), 4) for k, p in probs.items()}
 
 
 def _best_market_odds_factor(book_odds: Optional[float]) -> float:

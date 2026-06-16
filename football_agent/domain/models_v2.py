@@ -14,7 +14,7 @@ Score conventions (enforced where noted):
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -198,6 +198,18 @@ class SquadContextV2(V2IngestModel):
     missing_key_players_count: int = 0
     starting_xi_confidence: float = Field(ge=0.0, le=1.0, default=0.5)
     line_stability_score: float = Field(ge=0.0, le=1.0, default=0.5)
+    availability_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=0.5,
+        description="Honest squad availability aggregate (XI confidence + absences).",
+    )
+    key_absence_impact_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=0.0,
+        description="Estimated impact of key-role absences; 0 when unknown/no signal.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +442,29 @@ class ExpressScreeningV2(V2OutputModel):
     )
 
 
+AnalysisMode = Literal["full_scoring", "analysis_only"]
+PredictionMode = Literal["league_scored", "parked_analysis_only"]
+ParkedRouteKind = Literal["non_league_parked", "unknown_parked"]
+
+
+class ParkedAnalysisContextV2(V2OutputModel):
+    """Structured metadata when league scorer is intentionally not applied."""
+
+    mode: Literal["analysis_only"] = "analysis_only"
+    route: ParkedRouteKind
+    tournament_type: TournamentType
+    category: str = Field(description="CompetitionContextClass value, e.g. domestic_cup.")
+    reason: str
+    book_odds_available: bool = False
+    book_odds_markets_count: int = Field(ge=0, default=0)
+    news_available: bool = False
+    standings_available: bool = False
+    snapshot_confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    snapshot_completeness: float = Field(ge=0.0, le=1.0, default=0.5)
+    can_build_express: bool = False
+    data_quality_note: Optional[str] = None
+
+
 class MatchPredictionResultV2(V2OutputModel):
     match_meta: MatchMetaV2
     home_scoring: TeamScoringResultV2
@@ -439,6 +474,9 @@ class MatchPredictionResultV2(V2OutputModel):
     express_safety: ExpressScreeningV2 = Field(default_factory=ExpressScreeningV2)
     prediction_summary: Optional[str] = None
     overall_confidence_score: float = Field(ge=0.0, le=1.0, default=0.5)
+    analysis_mode: AnalysisMode = "full_scoring"
+    prediction_mode: PredictionMode = "league_scored"
+    parked_context: Optional[ParkedAnalysisContextV2] = None
 
 
 class ExpressEventV2(V2OutputModel):

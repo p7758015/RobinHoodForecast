@@ -18,8 +18,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from football_agent.offline.evaluation_v2 import evaluate_best_market_runs
+from football_agent.offline.evaluation_v2 import (
+    SETTLEMENT_IDENTITY_CONTRACT,
+    evaluate_best_market_runs,
+    extract_settlement_identity,
+)
 from football_agent.storage.evaluation_repository_v2 import EvaluationRepositoryV2
+
+
+def _competition_name_from_snapshot(snapshot_json: Optional[dict]) -> Optional[str]:
+    if not isinstance(snapshot_json, dict):
+        return None
+    meta = snapshot_json.get("match_meta")
+    if not isinstance(meta, dict):
+        return None
+    name = meta.get("competition_name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
 
 
 class OfflineEvaluationServiceV2:
@@ -48,33 +64,35 @@ class OfflineEvaluationServiceV2:
         scored_runs_total = len(rows)
         runs: List[dict] = []
         for r in rows:
-            snap = r.snapshot_json or {}
-            meta = (snap.get("match_meta") or {}) if isinstance(snap, dict) else {}
-
-            match_date_utc = meta.get("match_date_utc")
-            match_date = None
-            if isinstance(match_date_utc, str) and len(match_date_utc) >= 10:
-                match_date = match_date_utc[:10]
-
-            home = ((meta.get("home_team") or {}) if isinstance(meta.get("home_team"), dict) else {}).get("name")
-            away = ((meta.get("away_team") or {}) if isinstance(meta.get("away_team"), dict) else {}).get("name")
-
-            pred = r.prediction_json or {}
-            best = pred.get("best_market") if isinstance(pred, dict) else None
-
-            if not match_date or not isinstance(home, str) or not isinstance(away, str):
+            identity = extract_settlement_identity(
+                snapshot_json=r.snapshot_json,
+                run_home_team=r.home_team,
+                run_away_team=r.away_team,
+                run_kickoff_utc=r.kickoff_utc,
+            )
+            if identity is None:
                 # Cannot join without identity; keep fail-soft by skipping evaluation for this run.
                 continue
+
+            pred = r.prediction_json or {}
+            if isinstance(pred, dict) and pred.get("analysis_mode") == "analysis_only":
+                continue
+
+            best = pred.get("best_market") if isinstance(pred, dict) else None
 
             runs.append(
                 {
                     "run_id": r.run_id,
                     "match_key": r.match_key,
-                    "match_date": match_date,
-                    "home_team": home,
-                    "away_team": away,
+                    "match_date": identity.match_date,
+                    "home_team": identity.home_team,
+                    "away_team": identity.away_team,
+                    "identity_source": identity.source,
                     "best_market": best,
                     "report": r.report_json,
+                    "scoring_warnings": list(r.scoring_warnings or []),
+                    "competition_code": r.competition_code,
+                    "competition_name": _competition_name_from_snapshot(r.snapshot_json),
                 }
             )
 
@@ -93,6 +111,7 @@ class OfflineEvaluationServiceV2:
         }
         report["data_notes"] = {
             "no_future_leakage": True,
+            "settlement_identity_contract": SETTLEMENT_IDENTITY_CONTRACT,
             "source_tables": [
                 "analysis_runs_v2",
                 "analysis_predictions_v2",

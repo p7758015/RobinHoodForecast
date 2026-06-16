@@ -21,6 +21,7 @@ from football_agent.odds.adapters.fixture_backend import FixtureFileOddsAdapter
 from football_agent.odds.service import OddsIngestionService
 from football_agent.openclaw_context.adapters.fixture_backend import FixtureFileOpenClawContextAdapter
 from football_agent.openclaw_context.service import OpenClawContextIngestionService
+from football_agent.debug.scorer_inspection import build_scorer_inspection
 from football_agent.services.scoring_service_v2 import ScoringServiceV2
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,31 @@ def build_scoring_summary(scored_run) -> Dict[str, Any]:  # noqa: ANN001
     rep = scored_run.build_report
 
     best = pred.best_market.model_dump(mode="json") if pred.best_market else None
+    scoring_block: Dict[str, Any] = {
+        "best_market": best,
+        "markets_count": len(pred.market_predictions),
+        "overall_confidence_score": pred.overall_confidence_score,
+        "express_safety": pred.express_safety.model_dump(mode="json"),
+        "scoring_warnings": list(scored_run.scoring_warnings),
+        "scorer_name": scored_run.scorer_name,
+        "scoring_skipped": scored_run.scoring_skipped,
+        "analysis_mode": pred.analysis_mode,
+        "prediction_mode": pred.prediction_mode,
+        "prediction_summary": pred.prediction_summary,
+    }
+    if scored_run.routing_decision is not None:
+        rd = scored_run.routing_decision
+        scoring_block["routing_decision"] = {
+            "route": rd.route,
+            "reason": rd.reason,
+            "tournament_type": rd.tournament_type.value,
+            "category": rd.category.value,
+        }
+    if pred.parked_context is not None:
+        scoring_block["parked_context"] = pred.parked_context.model_dump(mode="json")
+    if not scored_run.scoring_skipped:
+        scoring_block["factor_inspection"] = build_scorer_inspection(scored_run)
+
     return {
         "snapshot_meta": snap.match_meta.model_dump(mode="json"),
         "source_tags": list(snap.source_tags),
@@ -43,13 +69,7 @@ def build_scoring_summary(scored_run) -> Dict[str, Any]:  # noqa: ANN001
             "builder_warnings": rep.builder_warnings,
             "id_generation_notes": rep.id_generation_notes,
         },
-        "scoring": {
-            "best_market": best,
-            "markets_count": len(pred.market_predictions),
-            "overall_confidence_score": pred.overall_confidence_score,
-            "express_safety": pred.express_safety.model_dump(mode="json"),
-            "scoring_warnings": list(scored_run.scoring_warnings),
-        },
+        "scoring": scoring_block,
     }
 
 
@@ -73,6 +93,10 @@ def _print_summary(summary: Dict[str, Any], *, as_json: bool) -> None:
     if scoring.get("best_market"):
         bm = scoring["best_market"]
         print(f"- best_market: {bm.get('market_key')} p={bm.get('probability')} book_odds={bm.get('book_odds')}")
+    elif scoring.get("analysis_mode") == "analysis_only":
+        print(f"- analysis_mode: analysis_only reason={scoring.get('routing_decision', {}).get('reason')}")
+        if scoring.get("prediction_summary"):
+            print(f"- summary: {scoring.get('prediction_summary')[:120]}...")
     if scoring.get("scoring_warnings"):
         print(f"- scoring_warnings: {scoring.get('scoring_warnings')}")
 

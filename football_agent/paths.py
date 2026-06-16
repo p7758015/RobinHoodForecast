@@ -14,6 +14,9 @@ PACKAGE_ROOT = Path(__file__).resolve().parent
 # Runtime data (SQLite, snapshots) — canonical location per original project layout
 DATA_DIR = PACKAGE_ROOT / "data"
 SNAPSHOTS_DIR = DATA_DIR / "snapshots"
+# Pre-kickoff odds refresh snapshots (JSON files, no extra DB table)
+ODDS_REFRESH_DIR = DATA_DIR / "odds_refresh"
+NEWS_REFRESH_DIR = DATA_DIR / "news_refresh"
 # Debug/live Flashscore fixture exports (CLI ``flashscore_trace``)
 FLASHSCORE_FIXTURES_DEBUG_DIR = DATA_DIR / "flashscore_fixtures"
 
@@ -28,4 +31,6 @@ def ensure_runtime_dirs() -> None:
     """Create runtime directories if missing."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    ODDS_REFRESH_DIR.mkdir(parents=True, exist_ok=True)
+    NEWS_REFRESH_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)

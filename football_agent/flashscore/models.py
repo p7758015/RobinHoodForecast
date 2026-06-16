@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -107,7 +107,7 @@ class FlashscoreSquadRaw(FlashscoreBaseModel):
     formations: Dict[str, Optional[str]] = Field(default_factory=dict)
     bench: Dict[str, List[str]] = Field(default_factory=dict)
 
-    missing_players_raw: Dict[str, List[str]] = Field(default_factory=dict)
+    missing_players_raw: Dict[str, List[Any]] = Field(default_factory=dict)
     player_status_raw: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
     coach_name_home: Optional[str] = None

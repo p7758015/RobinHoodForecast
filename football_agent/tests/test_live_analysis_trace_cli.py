@@ -6,21 +6,51 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from football_agent.debug import live_analysis_trace
-from football_agent.flashscore.models import FlashscoreMatchFacts, FlashscoreMeta, FlashscoreProvenance
+from football_agent.services.live_flashscore_pipeline import LivePipelineResult
 from football_agent.tests.test_scorer_v2 import make_snapshot
 
 
-def _minimal_facts() -> FlashscoreMatchFacts:
-    return FlashscoreMatchFacts(
-        meta=FlashscoreMeta(
-            match_id="fs-cli",
-            source_url="https://example.com/m",
-            competition_name="Test League",
-            home_team_name="Home FC",
-            away_team_name="Away FC",
-        ),
-        provenance=FlashscoreProvenance(scraper_backend_name="test"),
+def _scored_mock():
+    scored = MagicMock()
+    scored.snapshot = make_snapshot()
+    scored.prediction = MagicMock()
+    scored.prediction.best_market = None
+    scored.prediction.market_predictions = []
+    scored.prediction.overall_confidence_score = 0.5
+    scored.prediction.express_safety = MagicMock()
+    scored.prediction.express_safety.model_dump.return_value = {}
+    scored.build_report = MagicMock()
+    scored.build_report.merge_warnings = []
+    scored.build_report.merge_missing_blocks = ["openclaw_context"]
+    scored.build_report.openclaw_link_strategy = "unlinked"
+    scored.build_report.odds_link_strategy = "unlinked"
+    scored.build_report.builder_warnings = []
+    scored.build_report.id_generation_notes = {}
+    scored.scoring_warnings = []
+    return scored
+
+
+def _ok_result(**kwargs) -> LivePipelineResult:
+    defaults = dict(
+        success=True,
+        path="flashscore_url",
+        scored_run=_scored_mock(),
+        sources={"flashscore": "ok", "openclaw": "failed"},
+        warnings=["openclaw_context_fetch_failed: down"],
+        openclaw_link_strategy="unlinked",
+        odds_link_strategy="unlinked",
     )
+    defaults.update(kwargs)
+    return LivePipelineResult(**defaults)
+
+
+def test_main_check_services() -> None:
+    with patch(
+        "football_agent.debug.live_analysis_trace.check_live_services",
+        return_value=[],
+    ):
+        code = live_analysis_trace.main(["--check-services", "--json"])
+    assert code == 0
 
 
 def test_main_missing_flashscore_url_exit_2() -> None:
@@ -36,69 +66,54 @@ def test_main_missing_input_exit_2() -> None:
 
 
 def test_main_flashscore_fail_exit_1() -> None:
+    fail = LivePipelineResult(
+        success=False,
+        path="flashscore_url",
+        stage_failed="flashscore_ingest",
+        user_message="down",
+        sources={"flashscore": "failed"},
+    )
     with patch.object(live_analysis_trace.config, "FLASHSCORE_SCRAPER_URL", "http://localhost:3000"):
-        with patch.object(
-            live_analysis_trace,
-            "_fetch_flashscore_facts",
-            return_value=(None, {"flashscore": "failed", "flashscore_error": "down"}),
-        ):
+        with patch.object(live_analysis_trace.LiveFlashscorePipeline, "analyze_flashscore_url", return_value=fail):
             code = live_analysis_trace.main(["--match-url", "https://example.com/m"])
     assert code == 1
 
 
 def test_main_openclaw_fail_continues_exit_0(tmp_path: Path) -> None:
-    facts = _minimal_facts()
-    scored = MagicMock()
-    scored.snapshot = make_snapshot()
-    scored.prediction = MagicMock()
-    scored.prediction.best_market = None
-    scored.prediction.market_predictions = []
-    scored.prediction.overall_confidence_score = 0.5
-    scored.prediction.express_safety = MagicMock()
-    scored.prediction.express_safety.model_dump.return_value = {}
-    scored.build_report = MagicMock()
-    scored.build_report.merge_warnings = []
-    scored.build_report.merge_missing_blocks = []
-    scored.build_report.openclaw_link_strategy = "unlinked"
-    scored.build_report.odds_link_strategy = "unlinked"
-    scored.build_report.builder_warnings = []
-    scored.build_report.id_generation_notes = {}
-    scored.scoring_warnings = []
-
     with patch.object(live_analysis_trace.config, "FLASHSCORE_SCRAPER_URL", "http://localhost:3000"):
-        with patch.object(live_analysis_trace.config, "OPENCLAW_CONTEXT_BASE_URL", "http://oc.local"):
-            with patch.object(
-                live_analysis_trace,
-                "_fetch_flashscore_facts",
-                return_value=(facts, {"flashscore": "ok"}),
-            ):
-                with patch.object(
-                    live_analysis_trace,
-                    "fetch_openclaw_context_for_facts",
-                    return_value=(
-                        None,
-                        {"openclaw": "failed"},
-                        ["openclaw_context_fetch_failed: down"],
-                    ),
-                ):
-                    with patch.object(live_analysis_trace, "_fetch_odds_fixture", return_value=(None, {"odds": "none"})):
-                        with patch.object(live_analysis_trace, "merge_match_context_v2", return_value=MagicMock()):
-                            with patch.object(
-                                live_analysis_trace.MergedSnapshotBuilderV2,
-                                "build_with_report",
-                                return_value=(make_snapshot(), MagicMock()),
-                            ):
-                                with patch.object(
-                                    live_analysis_trace.ScoringServiceV2,
-                                    "score_snapshot_with_report",
-                                    return_value=scored,
-                                ):
-                                    code = live_analysis_trace.main(
-                                        [
-                                            "--match-url",
-                                            "https://example.com/m",
-                                            "--no-persist",
-                                            "--json",
-                                        ]
-                                    )
+        with patch.object(
+            live_analysis_trace.LiveFlashscorePipeline,
+            "analyze_flashscore_url",
+            return_value=_ok_result(),
+        ):
+            code = live_analysis_trace.main(
+                [
+                    "--flashscore-id",
+                    "Sfgk1gCs",
+                    "--use-openclaw",
+                    "--no-persist",
+                    "--json",
+                ]
+            )
+    assert code == 0
+
+
+def test_main_evaluate_requires_db_path() -> None:
+    with patch.object(live_analysis_trace.config, "FLASHSCORE_SCRAPER_URL", "http://localhost:3000"):
+        with patch.object(
+            live_analysis_trace.LiveFlashscorePipeline,
+            "analyze_flashscore_url",
+            return_value=_ok_result(persisted=True, run_id="r1", match_key="mk1"),
+        ):
+            with patch.object(live_analysis_trace.OfflineEvaluationServiceV2, "evaluate", return_value={"counts": {}}):
+                code = live_analysis_trace.main(
+                    [
+                        "--match-url",
+                        "https://example.com/m",
+                        "--db-path",
+                        "football_agent/data/football_agent.db",
+                        "--evaluate",
+                        "--json",
+                    ]
+                )
     assert code == 0

@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from football_agent.paths import DEFAULT_DB_PATH, ensure_runtime_dirs
 from football_agent.storage.sqlite_runtime import open_sqlite_connection
+from football_agent.offline.evaluation_v2 import Settlement, resolve_match_result
 from football_agent.storage.v2_database import (
     CREATE_ANALYSIS_BUILD_REPORTS_V2,
     CREATE_ANALYSIS_MERGED_CONTEXT_V2,
@@ -122,6 +123,7 @@ class EvaluationRepositoryV2:
             )
 
     def fetch_match_results_for_date(self, match_date: str) -> List[dict]:
+        """All ``match_results`` rows for a UTC kickoff date (normalized fallback scan)."""
         cur = self.conn.execute(
             "SELECT match_date, home_team, away_team, home_score, away_score FROM match_results WHERE match_date=?",
             (match_date,),
@@ -129,6 +131,7 @@ class EvaluationRepositoryV2:
         return [dict(r) for r in cur.fetchall()]
 
     def fetch_match_result_exact(self, match_date: str, home_team: str, away_team: str) -> Optional[dict]:
+        """Primary settlement join: raw (match_date, home_team, away_team) SQL equality."""
         row = self.conn.execute(
             """
             SELECT match_date, home_team, away_team, home_score, away_score
@@ -138,6 +141,26 @@ class EvaluationRepositoryV2:
             (match_date, home_team, away_team),
         ).fetchone()
         return dict(row) if row else None
+
+    def resolve_settlement(
+        self,
+        match_date: str,
+        home_team: str,
+        away_team: str,
+    ) -> Settlement:
+        """
+        Resolve final scores for a settlement identity.
+
+        Delegates to :func:`offline.evaluation_v2.resolve_match_result` using this
+        repository's exact + per-date lookups (see ``SETTLEMENT_IDENTITY_CONTRACT``).
+        """
+        return resolve_match_result(
+            match_date=match_date,
+            home_team=home_team,
+            away_team=away_team,
+            exact_lookup=self.fetch_match_result_exact,
+            date_lookup=self.fetch_match_results_for_date,
+        )
 
     def close(self) -> None:
         self.conn.close()

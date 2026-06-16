@@ -36,8 +36,14 @@ def test_score_snapshot_with_report_wraps_without_mutation() -> None:
     assert scored.snapshot is snapshot
     assert scored.build_report is report
 
-    # Warnings: transparent aggregation of existing scorer-side reasons.
-    assert scored.scoring_warnings == list(scored.prediction.express_safety.reasons or [])
+    # Warnings: routing reason + transparent aggregation of scorer-side reasons.
+    assert scored.routing_decision is not None
+    assert scored.routing_decision.route == "league_full"
+    assert decision.reason in scored.scoring_warnings if (decision := scored.routing_decision) else False
+    express_reasons = list(scored.prediction.express_safety.reasons or [])
+    for r in express_reasons:
+        if r != scored.routing_decision.reason:
+            assert r in scored.scoring_warnings
 
 
 def test_fixture_e2e_merge_builder_scorer_full_path() -> None:

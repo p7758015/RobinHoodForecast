@@ -1,0 +1,32 @@
+{
+  "match_id": "h4EoUB7T",
+  "home_team": "Mexico",
+  "away_team": "South Africa",
+  "odds": {
+    "bookmaker": "BetMGM.us",
+    "bookmaker_name": "BetMGM.us",
+    "markets": {
+      "home_win": 1.4,
+      "draw": 4.5,
+      "away_win": 8.0,
+      "double_chance_1x": 1.08,
+      "double_chance_x2": 2.87,
+      "btts_yes": 2.6,
+      "over_1_5": 1.4,
+      "under_3_5": 1.25
+    },
+    "odds_raw": {
+      "source_hash": "oce",
+      "snapshot": {}
+    }
+  },
+  "blocks_meta": {
+    "odds": {
+      "present": true,
+      "source": "network",
+      "activation": "tab",
+      "market_count": 8,
+      "bookmaker": "BetMGM.us"
+    }
+  }
+}

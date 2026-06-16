@@ -2,12 +2,11 @@
 
 ## 1) Описание
 **RobinHoodForecast** — ядро футбольного аналитического сервиса и CLI-бота.
-Сервис анализирует матчи топ‑5 лиг:
-- Англия (PL)
-- Испания (PD)
-- Франция (FL1)
-- Германия (BL1)
-- Италия (SA)
+Сервис анализирует матчи лиг из **registry/config** (по умолчанию FootballData discovery — топ‑5 европейских: PL, PD, FL1, BL1, SA; также поддерживаются non-top-5 через registry, напр. Botola `FS_BOTOLA_PRO` и Flashscore `FS_*` коды).
+
+Политика лиг (Stage 3, competition-agnostic):
+- анализ и экспресс — по лигам, заданным пользователем + allow/deny в `league_registry` / env (`LEAGUE_*_ALLOWED_CODES`, `LEAGUE_DENY_CODES`);
+- устаревшее ограничение «экспресс только top-5» снято; safety — через scorer `express_safety` и data-quality, не через жёсткий список лиг.
 
 Поддерживаемые типы запросов:
 - **all_matches**: анализ всех матчей на дату
@@ -42,7 +41,27 @@ pip install requests pydantic openai python-dotenv
 python main.py "Дай прогноз на все матчи 25.04.2026"
 ```
 
-## 4) Закрытие прогнозов (settle)
+## 4) Stage 4 — live debug (league matches, CLI only)
+
+Требуется локальный Flashscore scraper (`FLASHSCORE_SCRAPER_URL=http://localhost:3000`).
+OpenClaw enrichment опционален (`OPENCLAW_CONTEXT_BASE_URL=http://localhost:18789` — API gateway, не web UI :3030).
+
+```bash
+# Health
+python -m football_agent.debug.stage4_smoke --check-services
+
+# Один матч (Brazil Serie B smoke URL встроен в stage4_smoke)
+python -m football_agent.debug.live_analysis_trace \
+  --match-url "https://www.flashscore.com/match/football/avai-rPzY7fWt/ceara-p0JrJCV5/?mid=6FiXiHcc" \
+  --skip-openclaw --json
+
+# Batch smoke
+python -m football_agent.debug.stage4_smoke --scenario flashscore-only --match all --json
+```
+
+Подробнее: `football_agent/debug/README.md`
+
+## 5) Закрытие прогнозов (settle)
 
 Сохраняет фактические результаты матчей и закрывает прогнозы в базе:
 
@@ -50,7 +69,7 @@ python main.py "Дай прогноз на все матчи 25.04.2026"
 python settle_results.py --date 2026-04-25
 ```
 
-## 5) Переменные окружения
+## 6) Переменные окружения
 
 | Переменная | Описание |
 |---|---|
@@ -58,7 +77,7 @@ python settle_results.py --date 2026-04-25
 | `API_FOOTBALL_KEY` | API key для `API-Football` (API-Sports v3), заголовок `x-apisports-key` |
 | `OPENAI_API_KEY` | API key для OpenAI (используется только для parse/format) |
 
-## 6) Структура проекта
+## 7) Структура проекта
 
 ```
 RobinHoodForecast/

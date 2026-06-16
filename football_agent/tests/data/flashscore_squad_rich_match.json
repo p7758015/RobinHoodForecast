@@ -1,0 +1,78 @@
+{
+  "match_id": "fs-squad-rich-001",
+  "source_url": "https://www.flashscore.com/match/fs-squad-rich-001/",
+  "competition_name": "Serie A",
+  "competition_country": "Italy",
+  "season": 2025,
+  "tournament_type": "LEAGUE_REGULAR",
+  "kickoff_utc": "2025-12-01T18:00:00+00:00",
+  "home_team_name": "AC Milan",
+  "away_team_name": "Juventus",
+  "status": "SCHEDULED",
+  "standings": {
+    "home_position": 3,
+    "away_position": 6,
+    "home_points": 28,
+    "away_points": 24,
+    "home_matches_played": 13,
+    "away_matches_played": 13,
+    "home_goal_difference": 12,
+    "away_goal_difference": 6
+  },
+  "season_context": {
+    "matchday_number": 14,
+    "total_matchdays": 38
+  },
+  "form": {
+    "home": { "last_n_results": ["W", "D", "W"] },
+    "away": { "last_n_results": ["L", "W", "D"] }
+  },
+  "h2h": {
+    "recent_h2h_matches": 3,
+    "home_h2h_wins": 1,
+    "away_h2h_wins": 1,
+    "h2h_draws": 1
+  },
+  "squad_raw": {
+    "confirmed_lineups": {
+      "home": ["Milan GK", "Milan CB", "Milan ST"],
+      "away": []
+    },
+    "predicted_lineups": {
+      "home": [],
+      "away": ["Juve GK", "Juve DM", "Juve ST"]
+    },
+    "bench": {
+      "home": ["Milan Sub 1"],
+      "away": ["Juve Sub 1", "Juve Sub 2"]
+    },
+    "missing_players_raw": {
+      "home": [
+        {
+          "name": "Milan Striker",
+          "status": "injured",
+          "position": "striker",
+          "importance": "HIGH",
+          "confirmed": true
+        }
+      ],
+      "away": ["Away defender doubtful"]
+    },
+    "player_status_raw": {
+      "home": {
+        "Milan CB": "doubtful"
+      },
+      "away": {
+        "Juve DM": "suspended"
+      }
+    },
+    "coach_name_home": "Coach Home",
+    "coach_name_away": "Coach Away"
+  },
+  "schedule_raw": {
+    "previous_match_date_home": "2025-11-26",
+    "previous_match_date_away": "2025-11-26"
+  },
+  "scraper_backend_name": "fixture",
+  "scraper_backend_version": "0.0.1"
+}

@@ -82,6 +82,9 @@ class OddsMarketsBlock(OddsBaseModel):
     under_3_5: Optional[OddsMarketQuote] = None
 
 
+OddsFreshnessStatus = Literal["fresh", "stale", "unknown"]
+
+
 class OddsProvenance(OddsBaseModel):
     backend_name: str
     backend_version: Optional[str] = None
@@ -92,10 +95,21 @@ class OddsProvenance(OddsBaseModel):
     missing_blocks: List[str] = Field(default_factory=list)
     missing_markets: List[str] = Field(default_factory=list)
     extraction_warnings: List[str] = Field(default_factory=list)
+    # Refresh A — minimal freshness metadata (optional, fail-soft defaults)
+    freshness_status: OddsFreshnessStatus = "unknown"
+    is_stale: bool = False
+    last_refreshed_at_utc: Optional[datetime] = None
 
 
 class MatchOddsContext(OddsBaseModel):
     meta: OddsMeta
     markets: OddsMarketsBlock
     provenance: OddsProvenance
+    # Phase Evaluation A — per-market coverage flags (optional, built by odds.coverage)
+    coverage: Optional["MatchOddsCoverage"] = None
+
+
+from football_agent.odds.coverage_models import MatchOddsCoverage  # noqa: E402
+
+MatchOddsContext.model_rebuild()
 

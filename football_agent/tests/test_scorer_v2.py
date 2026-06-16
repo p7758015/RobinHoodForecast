@@ -8,7 +8,7 @@ from typing import Optional
 
 import pytest
 
-from football_agent.domain.enums_v2 import ExpressSafetyClass
+from football_agent.domain.enums_v2 import ExpressSafetyClass, LeagueMarketKey, SeasonPhase
 from football_agent.domain.models_v2 import (
     CoachContextV2,
     CoachRefV2,
@@ -27,7 +27,6 @@ from football_agent.domain.models_v2 import (
     TeamRefV2,
     TeamScheduleMiniBlockV2,
 )
-from football_agent.domain.enums_v2 import LeagueMarketKey
 from football_agent.scorers.league_scorer_v2 import MARKET_KEYS, LeagueScorerV2
 
 UTC = timezone.utc
@@ -62,22 +61,44 @@ def _squad(team: TeamRefV2, *, xi_confidence: float = 0.5) -> SquadContextV2:
     return SquadContextV2(team=team, starting_xi_confidence=xi_confidence)
 
 
-def _coach(team: TeamRefV2, *, first_match: bool = False, global_strength: float = 0.55) -> CoachContextV2:
+def _coach(
+    team: TeamRefV2,
+    *,
+    first_match: bool = False,
+    bounce_window: bool = False,
+    matches_in_charge: Optional[int] = None,
+    global_strength: float = 0.55,
+) -> CoachContextV2:
     return CoachContextV2(
         coach=CoachRefV2(name=f"Coach {team.team_id}"),
         team=team,
         is_first_match=first_match,
+        is_new_coach_bounce_window=bounce_window,
+        matches_in_charge=matches_in_charge,
         coach_global_strength_score=global_strength,
         coach_vs_opponent_team_score=global_strength,
         coach_vs_opponent_coach_score=0.5,
     )
 
 
-def _schedule(team: TeamRefV2, *, rotation: float = 0.1, congestion: float = 0.1) -> ScheduleContextV2:
+def _schedule(
+    team: TeamRefV2,
+    *,
+    rotation: float = 0.1,
+    congestion: float = 0.1,
+    pre_big: float = 0.0,
+    post_big: float = 0.0,
+    days_to_next: Optional[int] = None,
+    days_since_last: Optional[int] = None,
+) -> ScheduleContextV2:
     return ScheduleContextV2(
         team=team,
         rotation_risk_score=rotation,
         fixture_congestion_score=congestion,
+        pre_big_match_preservation_risk=pre_big,
+        post_big_match_relaxation_risk=post_big,
+        days_to_next_match=days_to_next,
+        days_since_last_match=days_since_last,
     )
 
 
@@ -110,16 +131,19 @@ def make_snapshot(
     away_rotation: float = 0.1,
     with_odds: bool = False,
     season_progress: float = 0.75,
+    season_phase: Optional[SeasonPhase] = None,
+    confidence_breakdown: Optional[ConfidenceBreakdownV2] = None,
 ) -> MatchAnalysisSnapshotV2:
     meta = MatchMetaV2(
         match_id=1000 + int(home_baseline * 100) + int(away_baseline * 10),
         season=2024,
-        competition_name="Test League",
-        competition_code="TL",
+        competition_name="Premier League",
+        competition_code="PL",
         match_date_utc=datetime(2024, 4, 25, 15, 0, tzinfo=UTC),
         home_team=HOME,
         away_team=AWAY,
         season_progress=season_progress,
+        season_phase=season_phase,
     )
     odds = OddsContextV2()
     if with_odds:
@@ -152,7 +176,8 @@ def make_snapshot(
             h2h_context_bias=h2h_bias,
             h2h_btts_rate=0.55,
         ),
-        confidence=ConfidenceBreakdownV2(overall_confidence_score=confidence),
+        confidence=confidence_breakdown
+        or ConfidenceBreakdownV2(overall_confidence_score=confidence),
     )
 
 
@@ -266,9 +291,10 @@ class TestNewCoachScheduleVolatility:
         result = scorer.score_snapshot(snap)
         assert "new_coach" in result.home_scoring.summary_flags
         assert "schedule_risk" in result.home_scoring.summary_flags
-        assert result.express_safety.allow_for_express is False
+        assert result.express_safety.penalty_score >= 0.15
         assert "new_coach_first_match" in result.express_safety.reasons
         assert "schedule_volatility" in result.express_safety.reasons
+        assert result.express_safety.safety_class != ExpressSafetyClass.EXPRESS_SAFE
 
 
 class TestStrongH2HSkewBalanced:

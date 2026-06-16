@@ -1,0 +1,46 @@
+{
+  "news": {
+    "match_news_items": [
+      {
+        "title": "Avai host Ceara in Serie B clash",
+        "summary": "Both sides need points in relegation battle.",
+        "source_name": "openclaw_bridge",
+        "reliability_level": "MEDIUM",
+        "affects_team": "BOTH"
+      }
+    ]
+  },
+  "squad_context": {
+    "home": {
+      "missing_players_context": [
+        {
+          "player_name": "Midfielder A",
+          "reason": "suspension",
+          "status": "OUT",
+          "confidence": "MEDIUM"
+        }
+      ],
+      "depth_risk_level": "MEDIUM",
+      "rotation_risk_level": "LOW"
+    },
+    "away": {
+      "lineup_uncertainty_notes": ["Goalkeeper fitness test on matchday."],
+      "depth_risk_level": "LOW",
+      "rotation_risk_level": "LOW"
+    }
+  },
+  "coach_context": {
+    "home": {"coach_name": "Coach Avai", "influence_summary": "Stable setup, direct style."},
+    "away": {"coach_name": "Coach Ceara", "pressure_summary": "Needs away result."},
+    "matchup": {"coach_vs_coach_summary": "Balanced tactical matchup.", "confidence": "MEDIUM"}
+  },
+  "motivation_narrative": {
+    "home": {"primary_objective_summary": "Secure home points.", "confidence": "MEDIUM"},
+    "away": {"primary_objective_summary": "Climb away from drop zone.", "confidence": "MEDIUM"},
+    "matchwide": {"public_narrative_summary": "Six-pointer in Serie B.", "confidence": "MEDIUM"}
+  },
+  "fatigue_schedule_context": {
+    "home": {"fatigue_summary": "Normal rest window.", "confidence": "HIGH"},
+    "away": {"fatigue_summary": "Midweek travel, moderate fatigue.", "confidence": "MEDIUM"}
+  }
+}

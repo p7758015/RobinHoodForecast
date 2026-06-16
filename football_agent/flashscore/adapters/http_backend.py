@@ -84,10 +84,14 @@ class HttpFlashscoreScraperAdapter(FlashscoreScraperAdapter):
         self,
         date_str: str,
         competition_code: Optional[str] = None,
+        *,
+        competition_url: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         base = self._require_base()
         params: Dict[str, str] = {"date": date_str}
-        if competition_code:
+        if competition_url:
+            params["competition_url"] = competition_url.strip()
+        elif competition_code:
             params["competition_code"] = competition_code.upper()
 
         url = urljoin(base + "/", self._date_path.lstrip("/"))
@@ -99,7 +103,7 @@ class HttpFlashscoreScraperAdapter(FlashscoreScraperAdapter):
             error_cls=FlashscoreScraperUnavailableError,
         )
         records = normalize_match_list(data)
-        if competition_code:
+        if competition_code and not competition_url:
             code = competition_code.upper()
             records = [
                 r
@@ -107,6 +111,39 @@ class HttpFlashscoreScraperAdapter(FlashscoreScraperAdapter):
                 if str(r.get("competition_code") or "").upper() == code
             ]
         return [self._normalize_single_record(r) for r in records]
+
+    def search_competitions(self, query: str, *, limit: int = 8) -> List[Dict[str, Any]]:
+        from football_agent.discovery.scraper_client import FlashscoreDiscoveryClient
+
+        client = FlashscoreDiscoveryClient(
+            self._require_base(),
+            api_key=self._api_key,
+            timeout_s=self._timeout,
+            session=self._session,
+        )
+        return client.search_competitions(query, limit=limit)
+
+    def fetch_competition_fixtures(
+        self,
+        competition_url: str,
+        *,
+        date_from: str,
+        date_to: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        from football_agent.discovery.scraper_client import FlashscoreDiscoveryClient
+
+        client = FlashscoreDiscoveryClient(
+            self._require_base(),
+            api_key=self._api_key,
+            timeout_s=self._timeout,
+            session=self._session,
+        )
+        rows = client.fetch_competition_fixtures(
+            competition_url,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        return [self._normalize_single_record(r) for r in rows]
 
     def _normalize_single_record(self, data: Any) -> Dict[str, Any]:
         if not isinstance(data, dict):

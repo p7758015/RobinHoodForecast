@@ -1,0 +1,81 @@
+{
+  "match_id": "kz-fs-1001",
+  "source_url": "https://www.flashscore.com/match/football/astana-abc/kairat-xyz/?mid=kz-fs-1001",
+  "competition_name": "Premier League",
+  "competition_country": "Kazakhstan",
+  "season": 2026,
+  "stage": "Regular Season",
+  "round": "12",
+  "tournament_type": "LEAGUE_REGULAR",
+  "kickoff_utc": "2026-06-02T14:00:00+00:00",
+  "home_team_name": "FC Astana",
+  "away_team_name": "Kairat Almaty",
+  "status": "SCHEDULED",
+  "standings": {
+    "home_position": 2,
+    "away_position": 4,
+    "home_points": 24,
+    "away_points": 20,
+    "home_matches_played": 11,
+    "away_matches_played": 11,
+    "home_goal_difference": 8,
+    "away_goal_difference": 5
+  },
+  "season_context": {
+    "matchday_number": 12,
+    "total_matchdays": 26,
+    "rounds_remaining_after_this_match": 14,
+    "table_neighbors": {
+      "ucl_cutoff_pos": 2,
+      "relegation_cutoff_pos": 12,
+      "title_leader_points": 28,
+      "ucl_cutoff_points": 24,
+      "relegation_safety_points": 14
+    }
+  },
+  "form": {
+    "home": {
+      "last_n_results": ["W", "W", "D"],
+      "last_n_points": 7,
+      "goals_for_last_n": 5,
+      "goals_against_last_n": 2,
+      "clean_sheets_last_n": 1,
+      "btts_last_n": 1,
+      "over_25_last_n": 1
+    },
+    "away": {
+      "last_n_results": ["L", "W", "D"],
+      "last_n_points": 4,
+      "goals_for_last_n": 4,
+      "goals_against_last_n": 4,
+      "clean_sheets_last_n": 0,
+      "btts_last_n": 2,
+      "over_25_last_n": 2
+    }
+  },
+  "h2h": {
+    "recent_h2h_matches": 3,
+    "home_h2h_wins": 1,
+    "away_h2h_wins": 1,
+    "h2h_draws": 1,
+    "avg_h2h_goals": 2.0,
+    "btts_h2h_rate": 0.5
+  },
+  "squad_raw": {
+    "predicted_lineups": {"home": ["H1"], "away": ["A1"]},
+    "coach_name_home": "Coach KZ Home",
+    "coach_name_away": "Coach KZ Away"
+  },
+  "schedule_raw": {
+    "previous_match_date_home": "2026-05-28",
+    "previous_match_date_away": "2026-05-29",
+    "recent_match_dates_home": ["2026-05-28"],
+    "recent_match_dates_away": ["2026-05-29"]
+  },
+  "stats_raw": {
+    "team_stats": {
+      "home": {"avg_goals_for": 1.5},
+      "away": {"avg_goals_for": 1.2}
+    }
+  }
+}

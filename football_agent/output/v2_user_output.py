@@ -45,6 +45,20 @@ def format_v2_match_payload_dict(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def format_v2_single_match_text(payload: Dict[str, Any]) -> str:
+    if payload.get("analysis_mode") == "analysis_only":
+        meta = payload.get("match") or {}
+        lines = [
+            f"{_flag(meta.get('competition', ''))} {_match_title(meta)}",
+            "Режим: analysis-only (league scoring не применяется)",
+        ]
+        summary = payload.get("prediction_summary")
+        if summary:
+            lines.append(str(summary))
+        conf = payload.get("confidence")
+        if conf is not None:
+            lines.append(f"Уверенность данных: {float(conf):.0%}")
+        return "\n".join(lines)
+
     payload = format_v2_match_payload_dict(payload)
     meta = payload.get("match") or {}
     lines = [
@@ -106,6 +120,26 @@ def format_v2_express_text(payload: Dict[str, Any]) -> str:
 
 def build_match_payload_from_result(result: MatchPredictionResultV2) -> Dict[str, Any]:
     meta = result.match_meta
+    if result.analysis_mode == "analysis_only":
+        parked = result.parked_context
+        payload = {
+            "pipeline_version": "v2",
+            "analysis_mode": result.analysis_mode,
+            "prediction_mode": result.prediction_mode,
+            "match": {
+                "competition": meta.competition_code,
+                "home": meta.home_team.short_name or meta.home_team.name,
+                "away": meta.away_team.short_name or meta.away_team.name,
+            },
+            "best_market": None,
+            "top_markets": [],
+            "confidence": result.overall_confidence_score,
+            "prediction_summary": result.prediction_summary,
+            "parked_context": parked.model_dump(mode="json") if parked else None,
+            "best_pick_line": "analysis-only (без кодового прогноза)",
+        }
+        return payload
+
     bm = result.best_market
     ranked = sorted(result.market_predictions, key=lambda m: m.probability, reverse=True)
     top = []

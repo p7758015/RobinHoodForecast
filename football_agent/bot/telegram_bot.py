@@ -30,6 +30,7 @@ from football_agent.bot.runtime_health import (
     format_health_message,
     validate_startup,
 )
+from football_agent.bot.request_parser import MatchRequestKind, parse_match_request
 from football_agent.paths import DEFAULT_DB_PATH
 from football_agent.services.live_flashscore_pipeline import LiveFlashscorePipeline
 from football_agent.services.telegram_match_analysis_service import (
@@ -49,18 +50,23 @@ WELCOME_TEXT = (
     "Отправьте ссылку на матч Flashscore или пары команд:\n"
     "• https://www.flashscore.com/match/football/.../?mid=...\n"
     "• FAR Rabat — Maghreb Fez\n"
-    "• Real Madrid vs Barcelona 2026-06-15\n\n"
-    "Команды: /help /health"
+        "• Real Madrid vs Barcelona 2026-06-15\n"
+        "• дай прогноз на лигу Китая\n"
+        "• проанализируй следующий тур латвии\n\n"
+        "Команды: /help /health"
 )
 
 HELP_TEXT = (
     "Как пользоваться:\n\n"
     "1. Ссылка Flashscore — самый надёжный способ.\n"
-    "2. Команды через «—», «-» или «vs» (дата опциональна).\n\n"
+    "2. Команды через «—», «-» или «vs» (дата опциональна).\n"
+    "3. Запрос по лиге: «дай прогноз на лигу Китая», «серия B бразилии».\n\n"
+    "Если запрос неполный — бот попросит уточнить и покажет примеры.\n\n"
     "Примеры:\n"
     "https://www.flashscore.com/match/football/.../?mid=dC2J6FlK\n"
-    "Kawkab Marrakech — Raja Casablanca\n\n"
-    "Сейчас поддерживается анализ одного матча.\n"
+    "Kawkab Marrakech — Raja Casablanca\n"
+    "дай прогноз на лигу Китая\n\n"
+    "Сейчас поддерживается анализ одного матча и лиги (несколько матчей, лимит).\n"
     "Проверка сервисов: /health"
 )
 
@@ -138,13 +144,20 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.warning("send_chat_action failed user_id=%s: %s", user_id, exc)
 
     if _looks_like_analysis_request(user_text):
-        try:
-            await update.message.reply_text("Анализирую матч, подождите…")
-        except Exception as exc:
-            logger.warning("progress message failed user_id=%s: %s", user_id, exc)
+        req = parse_match_request(user_text)
+        if req.kind != MatchRequestKind.NEEDS_CLARIFICATION:
+            progress = (
+                "Анализирую лигу, подождите…"
+                if req.kind == MatchRequestKind.LEAGUE_QUERY
+                else "Анализирую матч, подождите…"
+            )
+            try:
+                await update.message.reply_text(progress)
+            except Exception as exc:
+                logger.warning("progress message failed user_id=%s: %s", user_id, exc)
 
     try:
-        response = await _run_analysis(user_text)
+        response = await _run_analysis(user_text, chat_id=chat_id)
         logger.info(
             "analysis_done user_id=%s success=%s kind=%s path=%s stage=%s persisted=%s",
             user_id,
@@ -195,16 +208,25 @@ async def _on_post_shutdown(application: Application) -> None:  # noqa: ARG001
 
 
 def _looks_like_analysis_request(text: str) -> bool:
+    req = parse_match_request(text)
+    if req.kind in (
+        MatchRequestKind.FLASHSCORE_URL,
+        MatchRequestKind.TEAM_QUERY,
+        MatchRequestKind.LEAGUE_QUERY,
+    ):
+        return True
+    if req.kind == MatchRequestKind.NEEDS_CLARIFICATION:
+        return False
     low = text.lower()
     return "flashscore" in low or any(sep in text for sep in (" — ", " - ", " vs ", " v ", " – "))
 
 
-async def _run_analysis(user_text: str) -> TelegramAnalysisResponse:
+async def _run_analysis(user_text: str, *, chat_id: Optional[int] = None) -> TelegramAnalysisResponse:
     loop = asyncio.get_running_loop()
     service = get_analysis_service()
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(None, service.analyze_text, user_text),
+            loop.run_in_executor(None, lambda: service.analyze_text(user_text, chat_id=chat_id)),
             timeout=config.BOT_ANALYSIS_TIMEOUT_S,
         )
     except asyncio.TimeoutError:

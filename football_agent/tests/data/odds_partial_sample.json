@@ -1,0 +1,11 @@
+{
+  "fixture_id": "fs-12345",
+  "match_id": "fs-12345",
+  "home_team": "AC Milan",
+  "away_team": "Juventus",
+  "kickoff_utc": "2025-11-29T17:30:00+00:00",
+  "collected_at_utc": "2025-11-29T12:00:00Z",
+  "markets": {
+    "home_win": { "odds_value": 2.05, "bookmaker_name": "PartialBook" }
+  }
+}

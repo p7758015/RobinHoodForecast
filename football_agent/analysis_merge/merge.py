@@ -15,6 +15,7 @@ from football_agent.flashscore.derived_season import derive_season_motivation
 from football_agent.flashscore.models import FlashscoreMatchFacts
 from football_agent.odds.models import MatchOddsContext
 from football_agent.odds.service import MARKET_FIELDS
+from football_agent.news_context.models import MatchNewsContext
 from football_agent.openclaw_context.models import OpenClawMatchContext
 
 
@@ -35,6 +36,7 @@ def merge_match_context_v2(
     facts: FlashscoreMatchFacts,
     openclaw_context: Optional[OpenClawMatchContext],
     odds_context: Optional[MatchOddsContext],
+    news_context: Optional[MatchNewsContext] = None,
 ) -> MergedMatchAnalysisContext:
     """Merge Flashscore facts (+ derived) with optional OpenClaw context + optional odds."""
     derived = derive_season_motivation(facts)
@@ -56,6 +58,11 @@ def merge_match_context_v2(
     else:
         missing_blocks.append("odds_context")
         warnings.append("odds_context_not_provided")
+
+    if news_context is not None:
+        blocks_present.append("news_context")
+    else:
+        missing_blocks.append("news_context")
 
     odds_values = _headline_odds_values(odds_context)
     odds_missing_count = _odds_missing_count(odds_context)
@@ -89,6 +96,7 @@ def merge_match_context_v2(
         derived_season_motivation=derived,
         openclaw_context=openclaw_context,
         odds_context=odds_context,
+        news_context=news_context,
         provenance=prov,
     )
 
@@ -126,8 +134,14 @@ def _link_strategy_odds(
     if odds is None:
         return "unlinked", warnings
 
-    # 1) by_match_id
-    if odds.meta.match_id and facts.meta.match_id and str(odds.meta.match_id) == str(facts.meta.match_id):
+    fs_mid = str(facts.meta.match_id or "").strip()
+    od_mid = str(odds.meta.match_id or "").strip()
+    od_fid = str(odds.meta.fixture_id or "").strip()
+
+    # 1) by_match_id (explicit or fixture_id alias)
+    if fs_mid and od_mid and fs_mid == od_mid:
+        return "by_match_id", warnings
+    if fs_mid and od_fid and fs_mid == od_fid:
         return "by_match_id", warnings
 
     # 2) by_query_string
@@ -135,9 +149,20 @@ def _link_strategy_odds(
     if odds.meta.query_string and flashscore_qs and _norm(odds.meta.query_string) == _norm(flashscore_qs):
         return "by_query_string", warnings
 
-    # 3) by_teams_and_date
+    # 3) by_teams_and_date (strict when both dates present)
     if _teams_and_date_match_odds(facts, odds):
         return "by_teams_and_date", warnings
+
+    # 4) by_teams_only — canonical team keys match; dates missing or skipped (safe, no fuzzy)
+    if _teams_canonical_match_odds(facts, odds):
+        fs_date = facts.meta.kickoff_utc.date() if facts.meta.kickoff_utc else None
+        od_date = odds.meta.kickoff_utc.date() if odds.meta.kickoff_utc else None
+        if fs_date is None or od_date is None:
+            warnings.append("odds_link_teams_only_missing_date")
+            return "by_teams_and_date", warnings
+        if fs_date != od_date:
+            warnings.append("odds_link_teams_only_date_mismatch")
+            return "by_teams_and_date", warnings
 
     warnings.append("odds_provided_but_not_linked")
     return "provided_without_link", warnings
@@ -180,8 +205,7 @@ def _teams_and_date_match(facts: FlashscoreMatchFacts, context: OpenClawMatchCon
     return False
 
 
-def _teams_and_date_match_odds(facts: FlashscoreMatchFacts, odds: MatchOddsContext) -> bool:
-    # Deterministic canonicalization using existing alias index (no fuzzy matching).
+def _teams_canonical_match_odds(facts: FlashscoreMatchFacts, odds: MatchOddsContext) -> bool:
     from football_agent.normalizers.team_name_resolver import canonical_team_key, normalize_team_name
 
     def canon(name: str) -> str:
@@ -189,13 +213,15 @@ def _teams_and_date_match_odds(facts: FlashscoreMatchFacts, odds: MatchOddsConte
 
     home_fs = canon(facts.meta.home_team_name)
     away_fs = canon(facts.meta.away_team_name)
-
     home_od = canon(odds.meta.home_team)
     away_od = canon(odds.meta.away_team)
-
     if not home_fs or not away_fs or not home_od or not away_od:
         return False
-    if home_fs != home_od or away_fs != away_od:
+    return home_fs == home_od and away_fs == away_od
+
+
+def _teams_and_date_match_odds(facts: FlashscoreMatchFacts, odds: MatchOddsContext) -> bool:
+    if not _teams_canonical_match_odds(facts, odds):
         return False
 
     fs_date = facts.meta.kickoff_utc.date() if facts.meta.kickoff_utc else None

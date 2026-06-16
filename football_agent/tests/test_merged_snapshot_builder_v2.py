@@ -52,6 +52,13 @@ def test_builder_happy_path_with_openclaw_and_odds() -> None:
     assert snap.odds.away_not_lose is not None
     assert snap.odds.over_15 is not None
 
+    assert snap.home_team_context.form.last_5_form_score != 0.5
+    assert snap.home_team_context.motivation.league_position == 3
+    assert snap.home_schedule.days_since_last_match == 5
+    assert snap.home_coach.coach.name == "Coach Home"
+    assert snap.confidence.teams_confidence >= 0.6
+    assert snap.confidence.overall_completeness_score != 0.5
+
     assert isinstance(report, BuildReport)
     assert report.openclaw_link_strategy in ("by_match_id", "by_query_string", "by_teams_and_date", "provided_without_link", "unlinked")
     assert report.odds_link_strategy in ("by_match_id", "by_query_string", "by_teams_and_date", "provided_without_link", "unlinked")

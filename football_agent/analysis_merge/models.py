@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from football_agent.flashscore.derived_season import LeagueTableMotivationContext
 from football_agent.flashscore.models import FlashscoreMatchFacts
 from football_agent.odds.models import MatchOddsContext
+from football_agent.news_context.models import MatchNewsContext
 from football_agent.openclaw_context.models import OpenClawMatchContext
 
 
@@ -89,5 +90,6 @@ class MergedMatchAnalysisContext(MergeBaseModel):
     derived_season_motivation: LeagueTableMotivationContext
     openclaw_context: Optional[OpenClawMatchContext] = None
     odds_context: Optional[MatchOddsContext] = None
+    news_context: Optional[MatchNewsContext] = None
     provenance: MergeProvenance
 

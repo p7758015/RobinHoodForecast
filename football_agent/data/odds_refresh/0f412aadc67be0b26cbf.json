@@ -1,0 +1,127 @@
+{
+  "current": {
+    "match_key": "h4EoUB7T:Mexico:South Africa",
+    "match_url": "https://www.flashscore.com/match/football/mexico-O6iHcNkd/south-africa-W2ijYvlr/?mid=h4EoUB7T",
+    "kickoff_utc": "2026-06-11T22:00:00Z",
+    "collected_at_utc": "2026-06-11T14:31:26.083809Z",
+    "refreshed_at_utc": "2026-06-11T14:31:06.108697Z",
+    "is_stale": false,
+    "source": "flashscore_collector",
+    "warnings": [
+      "form_mapped_from_home_away_form_lists",
+      "h2h_aggregated_from_match_list",
+      "standings_mapped_from_flat_fields",
+      "flashscore_blocks_missing:squad_raw,schedule_raw,stats_raw",
+      "flashscore_blocks_missing:squad_raw,schedule_raw,stats_raw",
+      "flashscore_blocks_missing:squad_raw,schedule_raw,stats_raw",
+      "collector_odds_ok_8_markets",
+      "collector_teams:standings_partial_fields",
+      "collector_trace_id:0a9cc081fddb4bec"
+    ],
+    "odds_context": {
+      "meta": {
+        "fixture_id": "h4EoUB7T",
+        "match_id": "h4EoUB7T",
+        "source": "flashscore_collector",
+        "home_team": "Mexico",
+        "away_team": "South Africa",
+        "competition_name": "World Championship",
+        "kickoff_utc": "2026-06-11T22:00:00Z",
+        "odds_format": "DECIMAL",
+        "collected_at_utc": "2026-06-11T14:31:26.083809Z",
+        "source_url": "https://www.flashscore.com/match/football/mexico-O6iHcNkd/south-africa-W2ijYvlr/?mid=h4EoUB7T",
+        "query_string": null
+      },
+      "markets": {
+        "home_win": {
+          "odds_value": 1.4,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "home_win",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        },
+        "away_win": {
+          "odds_value": 8.0,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "away_win",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        },
+        "double_chance_1x": {
+          "odds_value": 1.08,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "double_chance_1x",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        },
+        "double_chance_x2": {
+          "odds_value": 2.87,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "double_chance_x2",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        },
+        "btts_yes": {
+          "odds_value": 2.6,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "btts_yes",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        },
+        "home_team_to_score_yes": null,
+        "away_team_to_score_yes": null,
+        "over_1_5": {
+          "odds_value": 1.4,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "over_1_5",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        },
+        "under_3_5": {
+          "odds_value": 1.25,
+          "bookmaker_name": "BetMGM.us",
+          "market_name_raw": null,
+          "selection_name_raw": "under_3_5",
+          "source_url": null,
+          "extracted_at_utc": null,
+          "confidence": "HIGH"
+        }
+      },
+      "provenance": {
+        "backend_name": "flashscore_collector",
+        "backend_version": "odds-a",
+        "adapter_version": "collector-odds-bridge-v1",
+        "collected_at_utc": "2026-06-11T14:31:26.083809Z",
+        "blocks_present": [
+          "collector_odds"
+        ],
+        "missing_blocks": [],
+        "missing_markets": [
+          "home_team_to_score_yes",
+          "away_team_to_score_yes"
+        ],
+        "extraction_warnings": [
+          "collector_odds_draw_not_in_v1_contract",
+          "collector_odds_filled:home_win,away_win,double_chance_1x,double_chance_x2,btts_yes,over_1_5,under_3_5",
+          "collector_odds_confidence:0.95"
+        ],
+        "freshness_status": "fresh",
+        "is_stale": false,
+        "last_refreshed_at_utc": "2026-06-11T14:31:06.108697Z"
+      }
+    }
+  },
+  "stale": []
+}

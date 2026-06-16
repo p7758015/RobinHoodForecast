@@ -1,14 +1,14 @@
 {
-  "fixture_id": "fixture_sample_001",
-  "match_id": "sample-match-001",
+  "fixture_id": "fs-12345",
+  "match_id": "fs-12345",
   "backend_name": "fixture",
   "backend_version": "1",
   "home_team": "AC Milan",
-  "away_team": "Inter",
+  "away_team": "Juventus",
   "competition_name": "Serie A",
-  "kickoff_utc": "2026-06-02T18:45:00Z",
-  "collected_at_utc": "2026-06-02T12:00:00Z",
-  "source_url": "https://example.invalid/odds/fixture_sample_001",
+  "kickoff_utc": "2025-11-29T17:30:00+00:00",
+  "collected_at_utc": "2025-11-29T12:00:00Z",
+  "source_url": "https://example.invalid/odds/fs-12345",
   "markets": {
     "home_win": { "odds_value": 2.15, "bookmaker_name": "ExampleBook" },
     "away_win": { "odds_value": 3.40, "bookmaker_name": "ExampleBook" },
@@ -20,4 +20,3 @@
     "over_1_5": 1.22
   }
 }
-

@@ -10,6 +10,7 @@ import logging
 import math
 from typing import List, Optional, Tuple
 
+from football_agent.competition_policy import is_express_allowed
 from football_agent.config import (
     EXPRESS_MAX_ODDS,
     EXPRESS_MIN_LEG_ODDS,
@@ -62,6 +63,15 @@ class ExpressBuilderV2:
 
         for result in results:
             try:
+                policy = is_express_allowed(result.match_meta.competition_code)
+                if not policy.allowed:
+                    logger.warning(
+                        "Express policy skip match %s competition=%s warning=%s",
+                        result.match_meta.match_id,
+                        policy.competition_code,
+                        policy.warning,
+                    )
+                    continue
                 if not result.express_safety.allow_for_express:
                     continue
                 market = result.best_market

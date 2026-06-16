@@ -155,6 +155,8 @@ class FlashscoreIngestionService:
 
         if not value:
             return TournamentType.LEAGUE_REGULAR
+        if isinstance(value, TournamentType):
+            return value
         try:
             return TournamentType[str(value)]
         except Exception:

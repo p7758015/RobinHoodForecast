@@ -9,6 +9,7 @@ from football_agent.league_registry import (
     UNKNOWN_TOTAL_ROUNDS_WARNING,
     LeagueConfig,
     discovery_competition_codes,
+    list_football_data_discovery_codes,
     list_registry_codes,
     register_league,
     resolve_league_params,
@@ -37,13 +38,22 @@ def test_fl1_euro_slots_override() -> None:
     assert fl1.euro_slots == {"ucl": 2, "uel": 3}
 
 
-def test_discovery_default_registry_only() -> None:
+def test_discovery_default_football_data_codes_only() -> None:
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("LEAGUE_DISCOVERY_CODES", None)
         codes = discovery_competition_codes()
-    assert codes == list_registry_codes()
+    assert codes == list_football_data_discovery_codes()
     assert "PL" in codes
     assert len(codes) == 5
+    assert "FS_BOTOLA_PRO" in list_registry_codes()
+    assert "FS_BOTOLA_PRO" not in codes
+
+
+def test_botola_registry_entry() -> None:
+    botola = resolve_league_params("FS_BOTOLA_PRO")
+    assert botola.is_known is True
+    assert botola.total_rounds == 30
+    assert botola.display_name == "Botola Pro"
 
 
 def test_discovery_env_override() -> None:

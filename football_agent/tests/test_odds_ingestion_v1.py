@@ -16,7 +16,7 @@ def test_odds_ingestion_from_fixture_and_missing_markets() -> None:
 
     assert ctx.meta.odds_format == "DECIMAL"
     assert ctx.meta.home_team == "AC Milan"
-    assert ctx.meta.away_team == "Inter"
+    assert ctx.meta.away_team == "Juventus"
 
     assert ctx.markets.home_win is not None
     assert ctx.markets.home_win.odds_value == 2.15

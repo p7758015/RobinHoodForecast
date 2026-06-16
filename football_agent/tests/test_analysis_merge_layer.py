@@ -77,7 +77,12 @@ def test_merge_happy_path_with_context_and_odds_sets_headline_odds() -> None:
     merged = merge_match_context_v2(facts=facts, openclaw_context=ctx, odds_context=odds)
     assert merged.headline.openclaw_context_present is True
     assert merged.headline.odds_present is True
-    assert merged.provenance.odds_link_strategy in ("by_match_id", "by_query_string", "by_teams_and_date", "provided_without_link")
+    assert merged.provenance.odds_link_strategy in (
+        "by_match_id",
+        "by_query_string",
+        "by_teams_and_date",
+        "provided_without_link",
+    )
     assert merged.headline.home_win_odds == 2.15
     assert merged.headline.away_win_odds == 3.4
     assert merged.headline.odds_missing_count >= 0
@@ -104,6 +109,8 @@ def test_odds_provided_but_unlinked_does_not_fail_and_sets_strategy() -> None:
     odds.meta.away_team = "Teams"
     odds.meta.query_string = "something else"
     odds.meta.kickoff_utc = None
+    odds.meta.match_id = None
+    odds.meta.fixture_id = ""
 
     merged = merge_match_context_v2(facts=facts, openclaw_context=None, odds_context=odds)
     assert merged.odds_context is not None

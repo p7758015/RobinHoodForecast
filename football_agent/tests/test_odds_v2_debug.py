@@ -132,6 +132,7 @@ def test_best_market_prefers_actionable_over_short_dc() -> None:
 def test_express_builder_survives_partial_book_odds() -> None:
     snap = make_snapshot(with_odds=True, home_baseline=0.7, away_baseline=0.4)
     pred = LeagueScorerV2().score_snapshot(snap)
+    pred.match_meta = pred.match_meta.model_copy(update={"competition_code": "PL"})
     pred.express_safety.allow_for_express = True
     builder = ExpressBuilderV2()
     result = builder.build_express([pred], target_odds=2.5)

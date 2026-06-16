@@ -61,7 +61,9 @@ def test_friendly_classification() -> None:
 def test_unknown_ambiguous() -> None:
     clf = classify_competition_meta(_meta(competition_name="Regional Tournament XYZ"))
     assert clf.category == CompetitionContextClass.UNKNOWN
+    assert clf.tournament_type == TournamentType.UNKNOWN
     assert clf.confidence == "low"
+    assert clf.is_league_eligible is False
 
 
 def test_explicit_tournament_type_trusted() -> None:

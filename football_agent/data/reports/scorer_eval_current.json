@@ -1,0 +1,1279 @@
+{
+  "entry_points": {
+    "offline_cli": "python -m football_agent.debug.offline_evaluation_trace",
+    "batch_persist": "offline.v2_calibration_runner.run_v2_batch_persist_and_evaluate",
+    "live_trace": "python -m football_agent.debug.merged_scoring_trace",
+    "inspection": "football_agent.debug.scorer_inspection.build_scorer_inspection"
+  },
+  "batch_evaluation": {
+    "batch": {
+      "pipeline": "run_level_batch_persist",
+      "fixtures_dir": "C:\\Users\\p7758\\PycharmProjects\\RobinHoodForecast\\football_agent\\tests\\data",
+      "items_requested": 4,
+      "runs_persisted": 4,
+      "match_results_saved": 4,
+      "skipped": 0,
+      "runs": [
+        {
+          "run_id": "99ffd188-c605-4eab-8503-ddee23e26ab7",
+          "flashscore_stem": "flashscore_sample_league_match",
+          "match_date": "2025-11-29",
+          "home_team": "AC Milan",
+          "away_team": "Juventus",
+          "run_status": "scored"
+        },
+        {
+          "run_id": "b333d5e8-e7dc-4b8d-891f-f1fca64f1284",
+          "flashscore_stem": "flashscore_botola_sample_match",
+          "match_date": "2026-06-09",
+          "home_team": "Kawkab Marrakech",
+          "away_team": "Raja Casablanca",
+          "run_status": "scored"
+        },
+        {
+          "run_id": "1c0b56c0-4ab3-4369-a026-5a35fe41989b",
+          "flashscore_stem": "flashscore_botola_sample_match_2",
+          "match_date": "2026-06-09",
+          "home_team": "COD Meknes",
+          "away_team": "Yacoub El Mansour",
+          "run_status": "scored"
+        },
+        {
+          "run_id": "6286d3c8-7730-43df-86b0-a911786aff68",
+          "flashscore_stem": "flashscore_botola_sample_match_3",
+          "match_date": "2026-06-09",
+          "home_team": "FAR Rabat",
+          "away_team": "Maghreb Fez",
+          "run_status": "scored"
+        }
+      ],
+      "errors": []
+    },
+    "evaluation": {
+      "counts": {
+        "scored_runs_total": 4,
+        "evaluable_runs_total": 4,
+        "settled_runs_total": 4,
+        "skipped_identity_runs_total": 0,
+        "join_exact_count": 4,
+        "join_normalized_count": 0,
+        "join_unresolved_count": 0,
+        "scored_runs": 4,
+        "settled_runs": 4,
+        "best_market_present": 4,
+        "best_market_book_odds_present": 1,
+        "best_market_settlement_compatible": 4,
+        "roi_subset": 1
+      },
+      "metrics": {
+        "settled_coverage": 1.0,
+        "evaluable_coverage": 1.0,
+        "odds_coverage": 0.25,
+        "best_market_hit_rate": 0.75,
+        "roi_total_profit": 0.33,
+        "roi_mean_profit": 0.33,
+        "roi": 0.33
+      },
+      "calibration": {
+        "buckets": [
+          {
+            "range": "[0.50,0.60)",
+            "count": 0,
+            "predicted_avg": null,
+            "wins": 0,
+            "actual_winrate": null
+          },
+          {
+            "range": "[0.60,0.70)",
+            "count": 3,
+            "predicted_avg": 0.6475,
+            "wins": 2,
+            "actual_winrate": 0.6667
+          },
+          {
+            "range": "[0.70,0.80)",
+            "count": 0,
+            "predicted_avg": null,
+            "wins": 0,
+            "actual_winrate": null
+          },
+          {
+            "range": "[0.80,0.90)",
+            "count": 1,
+            "predicted_avg": 0.8628,
+            "wins": 1,
+            "actual_winrate": 1.0
+          },
+          {
+            "range": "[0.90,1.01]",
+            "count": 0,
+            "predicted_avg": null,
+            "wins": 0,
+            "actual_winrate": null
+          }
+        ]
+      },
+      "slices": {
+        "meta": {
+          "evaluable_runs_total": 4,
+          "scored_runs_total": 4,
+          "runs_with_report": 4,
+          "runs_without_report": 0
+        },
+        "missing_blocks": {
+          "by_signature": {
+            "news_context+odds_context+openclaw_context": 3,
+            "news_context": 1
+          },
+          "by_block": {
+            "odds_context": 3,
+            "openclaw_context": 3,
+            "news_context": 4
+          }
+        },
+        "openclaw_link_strategy": {
+          "unlinked": 3,
+          "by_teams_and_date": 1
+        },
+        "odds_link_strategy": {
+          "unlinked": 3,
+          "provided_without_link": 1
+        },
+        "warnings": {
+          "runs_with_any_warning": 4,
+          "runs_without_warnings": 0,
+          "by_kind": {
+            "merge_warnings": 4,
+            "builder_warnings": 0,
+            "scoring_warnings": 4
+          }
+        },
+        "competition_code": {
+          "FS_BOTOLA_PRO": 3,
+          "FS_SERIE_A": 1
+        },
+        "competition_name": {
+          "Botola Pro": 3,
+          "Serie A": 1
+        }
+      },
+      "filters": {
+        "date_from": null,
+        "date_to": null,
+        "match_key": null,
+        "competition_code": null,
+        "limit": 1000
+      },
+      "data_notes": {
+        "no_future_leakage": true,
+        "settlement_identity_contract": "match_date:YYYY-MM-DD UTC; home_team; away_team \u2192 match_results; exact primary, normalized fallback, ambiguous unresolved",
+        "source_tables": [
+          "analysis_runs_v2",
+          "analysis_predictions_v2",
+          "analysis_build_reports_v2",
+          "analysis_snapshots_v2",
+          "match_results"
+        ]
+      }
+    }
+  },
+  "aggregate_league_metrics": {
+    "league_scored_count": 4,
+    "confidence_avg": 0.5813,
+    "confidence_min": 0.5108,
+    "confidence_max": 0.7929,
+    "low_confidence_share": 0.0,
+    "best_market_distribution": {
+      "HOME_NOT_LOSE": 1,
+      "HOME_TEAM_TO_SCORE": 3
+    },
+    "express_allow_count": 4,
+    "express_caution_or_higher": 0
+  },
+  "routing_sanity": {
+    "representative_scenarios": 6,
+    "parked_scenarios": 1,
+    "league_scenarios": 5
+  },
+  "representative_inspections": [
+    {
+      "label": "top5_league_serie_a",
+      "inspection": {
+        "scorer_name": "LeagueScorerV2",
+        "scoring_skipped": false,
+        "analysis_mode": "full_scoring",
+        "prediction_mode": "league_scored",
+        "overall_confidence": 0.7929,
+        "snapshot_confidence": {
+          "match_meta_confidence": 0.95,
+          "teams_confidence": 1.0,
+          "squads_confidence": 0.4,
+          "coaches_confidence": 0.55,
+          "odds_confidence": 0.85,
+          "news_confidence": 0.15,
+          "schedule_confidence": 0.73,
+          "h2h_confidence": 0.75,
+          "data_freshness_score": 0.45,
+          "source_agreement_score": 0.62,
+          "overall_completeness_score": 0.6725,
+          "overall_confidence_score": 0.792875
+        },
+        "team_strength_r": {
+          "home": 0.6809,
+          "away": 0.5823,
+          "balance": 0.0986
+        },
+        "home": {
+          "team": "AC Milan",
+          "season_phase": "MID",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.2279,
+            "current_form": 0.2735,
+            "motivation": 0.1823,
+            "squad_availability": 0.0925,
+            "coach_factor": 0.0937,
+            "schedule_context": 0.0924,
+            "h2h_context_bias": 0.0376
+          },
+          "factor_scores": {
+            "baseline_strength": 0.85,
+            "current_form": 0.65,
+            "motivation": 0.55,
+            "squad_availability": 0.45,
+            "coach_factor": 0.5,
+            "schedule_context": 0.872,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.6408651851851851
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.1937,
+            "current_form": 0.1778,
+            "motivation": 0.1003,
+            "squad_availability": 0.0416,
+            "coach_factor": 0.0468,
+            "schedule_context": 0.0806,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 30.2,
+              "current_form": 27.7,
+              "motivation": 15.6,
+              "squad_availability": 6.5,
+              "coach_factor": 7.3,
+              "schedule_context": 12.6,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.6409
+          },
+          "summary_flags": [
+            "home_side"
+          ]
+        },
+        "away": {
+          "team": "Juventus",
+          "season_phase": "MID",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.2279,
+            "current_form": 0.2735,
+            "motivation": 0.1823,
+            "squad_availability": 0.0925,
+            "coach_factor": 0.0937,
+            "schedule_context": 0.0924,
+            "h2h_context_bias": 0.0376
+          },
+          "factor_scores": {
+            "baseline_strength": 0.736842105263158,
+            "current_form": 0.53,
+            "motivation": 0.55,
+            "squad_availability": 0.45,
+            "coach_factor": 0.5,
+            "schedule_context": 0.872,
+            "h2h_context_bias": -0.0,
+            "total_score": 0.5822536992052781
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.1679,
+            "current_form": 0.145,
+            "motivation": 0.1003,
+            "squad_availability": 0.0416,
+            "coach_factor": 0.0468,
+            "schedule_context": 0.0806,
+            "h2h_context_bias": -0.0,
+            "share_pct": {
+              "baseline_strength": 28.8,
+              "current_form": 24.9,
+              "motivation": 17.2,
+              "squad_availability": 7.2,
+              "coach_factor": 8.0,
+              "schedule_context": 13.8,
+              "h2h_context_bias": -0.0
+            },
+            "total_weighted_sum": 0.5823
+          },
+          "summary_flags": []
+        },
+        "routing": {
+          "route": "league_full",
+          "reason": "league_full:high_confidence_league",
+          "tournament_type": "LEAGUE_REGULAR",
+          "category": "league"
+        },
+        "best_market": {
+          "market_key": "HOME_NOT_LOSE",
+          "probability": 0.8628,
+          "book_odds": 1.33,
+          "edge": 0.1109
+        },
+        "express_safety": {
+          "safety_class": "EXPRESS_SAFE",
+          "penalty_score": 0.0,
+          "reasons": [],
+          "allow_for_express": true
+        },
+        "top_markets": [
+          {
+            "market_key": "HOME_NOT_LOSE",
+            "probability": 0.8628
+          },
+          {
+            "market_key": "OVER_1_5",
+            "probability": 0.76
+          },
+          {
+            "market_key": "AWAY_NOT_LOSE",
+            "probability": 0.7521
+          },
+          {
+            "market_key": "HOME_TEAM_TO_SCORE",
+            "probability": 0.7408
+          }
+        ]
+      },
+      "legacy_delta": {
+        "home_r_legacy": 0.6434,
+        "away_r_legacy": 0.5945,
+        "home_r_current": 0.6809,
+        "away_r_current": 0.5823,
+        "best_market_legacy_note": "legacy probabilities not re-run (R delta only)"
+      }
+    },
+    {
+      "label": "late_season_high_motivation_synthetic",
+      "inspection": {
+        "scorer_name": "LeagueScorerV2",
+        "scoring_skipped": false,
+        "analysis_mode": "full_scoring",
+        "prediction_mode": "league_scored",
+        "overall_confidence": 0.72,
+        "snapshot_confidence": {
+          "match_meta_confidence": 0.5,
+          "teams_confidence": 0.5,
+          "squads_confidence": 0.5,
+          "coaches_confidence": 0.5,
+          "odds_confidence": 0.5,
+          "news_confidence": 0.5,
+          "schedule_confidence": 0.5,
+          "h2h_confidence": 0.5,
+          "data_freshness_score": 0.5,
+          "source_agreement_score": 0.5,
+          "overall_completeness_score": 0.5,
+          "overall_confidence_score": 0.72
+        },
+        "team_strength_r": {
+          "home": 0.7282,
+          "away": 0.6634,
+          "balance": 0.0648
+        },
+        "home": {
+          "team": "Home FC",
+          "season_phase": "FINAL_RUN_IN",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.12,
+            "current_form": 0.2,
+            "motivation": 0.28,
+            "squad_availability": 0.15,
+            "coach_factor": 0.1,
+            "schedule_context": 0.11,
+            "h2h_context_bias": 0.04
+          },
+          "factor_scores": {
+            "baseline_strength": 0.55,
+            "current_form": 0.6500000000000001,
+            "motivation": 0.92,
+            "squad_availability": 0.5,
+            "coach_factor": 0.54,
+            "schedule_context": 0.96,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.6882000000000001
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.066,
+            "current_form": 0.13,
+            "motivation": 0.2576,
+            "squad_availability": 0.075,
+            "coach_factor": 0.054,
+            "schedule_context": 0.1056,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 9.6,
+              "current_form": 18.9,
+              "motivation": 37.4,
+              "squad_availability": 10.9,
+              "coach_factor": 7.8,
+              "schedule_context": 15.3,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.6882
+          },
+          "summary_flags": [
+            "high_motivation",
+            "home_side"
+          ]
+        },
+        "away": {
+          "team": "Away FC",
+          "season_phase": "FINAL_RUN_IN",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.12,
+            "current_form": 0.2,
+            "motivation": 0.28,
+            "squad_availability": 0.15,
+            "coach_factor": 0.1,
+            "schedule_context": 0.11,
+            "h2h_context_bias": 0.04
+          },
+          "factor_scores": {
+            "baseline_strength": 0.52,
+            "current_form": 0.6000000000000001,
+            "motivation": 0.88,
+            "squad_availability": 0.5,
+            "coach_factor": 0.54,
+            "schedule_context": 0.96,
+            "h2h_context_bias": -0.0,
+            "total_score": 0.6634000000000001
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.0624,
+            "current_form": 0.12,
+            "motivation": 0.2464,
+            "squad_availability": 0.075,
+            "coach_factor": 0.054,
+            "schedule_context": 0.1056,
+            "h2h_context_bias": -0.0,
+            "share_pct": {
+              "baseline_strength": 9.4,
+              "current_form": 18.1,
+              "motivation": 37.1,
+              "squad_availability": 11.3,
+              "coach_factor": 8.1,
+              "schedule_context": 15.9,
+              "h2h_context_bias": -0.0
+            },
+            "total_weighted_sum": 0.6634
+          },
+          "summary_flags": [
+            "high_motivation"
+          ]
+        },
+        "routing": {
+          "route": "league_full",
+          "reason": "league_full:high_confidence_league",
+          "tournament_type": "LEAGUE_REGULAR",
+          "category": "league"
+        },
+        "best_market": {
+          "market_key": "AWAY_NOT_LOSE",
+          "probability": 0.788,
+          "book_odds": 1.95,
+          "edge": 0.2752
+        },
+        "express_safety": {
+          "safety_class": "EXPRESS_SAFE",
+          "penalty_score": 0.0,
+          "reasons": [],
+          "allow_for_express": true
+        },
+        "top_markets": [
+          {
+            "market_key": "HOME_NOT_LOSE",
+            "probability": 0.8563
+          },
+          {
+            "market_key": "OVER_1_5",
+            "probability": 0.84
+          },
+          {
+            "market_key": "BTTS_YES",
+            "probability": 0.8
+          },
+          {
+            "market_key": "AWAY_NOT_LOSE",
+            "probability": 0.788
+          }
+        ]
+      }
+    },
+    {
+      "label": "new_coach_first_match_synthetic",
+      "inspection": {
+        "scorer_name": "LeagueScorerV2",
+        "scoring_skipped": false,
+        "analysis_mode": "full_scoring",
+        "prediction_mode": "league_scored",
+        "overall_confidence": 0.52,
+        "snapshot_confidence": {
+          "match_meta_confidence": 0.5,
+          "teams_confidence": 0.5,
+          "squads_confidence": 0.5,
+          "coaches_confidence": 0.5,
+          "odds_confidence": 0.5,
+          "news_confidence": 0.5,
+          "schedule_confidence": 0.5,
+          "h2h_confidence": 0.5,
+          "data_freshness_score": 0.5,
+          "source_agreement_score": 0.5,
+          "overall_completeness_score": 0.5,
+          "overall_confidence_score": 0.52
+        },
+        "team_strength_r": {
+          "home": 0.5822,
+          "away": 0.5396,
+          "balance": 0.0426
+        },
+        "home": {
+          "team": "Home FC",
+          "season_phase": "LATE",
+          "special_overrides": [
+            "new_coach_first_match"
+          ],
+          "effective_weights": {
+            "baseline_strength": 0.1462,
+            "current_form": 0.1823,
+            "motivation": 0.2573,
+            "squad_availability": 0.1462,
+            "coach_factor": 0.1316,
+            "schedule_context": 0.1072,
+            "h2h_context_bias": 0.0292
+          },
+          "factor_scores": {
+            "baseline_strength": 0.5,
+            "current_form": 0.5,
+            "motivation": 0.55,
+            "squad_availability": 0.484,
+            "coach_factor": 0.66,
+            "schedule_context": 0.87,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.5422276803118908
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.0731,
+            "current_form": 0.0911,
+            "motivation": 0.1415,
+            "squad_availability": 0.0708,
+            "coach_factor": 0.0868,
+            "schedule_context": 0.0933,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 13.1,
+              "current_form": 16.4,
+              "motivation": 25.4,
+              "squad_availability": 12.7,
+              "coach_factor": 15.6,
+              "schedule_context": 16.8,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.5566
+          },
+          "summary_flags": [
+            "new_coach",
+            "thin_squad",
+            "schedule_risk",
+            "home_side"
+          ]
+        },
+        "away": {
+          "team": "Away FC",
+          "season_phase": "LATE",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.15,
+            "current_form": 0.22,
+            "motivation": 0.24,
+            "squad_availability": 0.15,
+            "coach_factor": 0.1,
+            "schedule_context": 0.11,
+            "h2h_context_bias": 0.03
+          },
+          "factor_scores": {
+            "baseline_strength": 0.5,
+            "current_form": 0.49999999999999994,
+            "motivation": 0.5,
+            "squad_availability": 0.5,
+            "coach_factor": 0.54,
+            "schedule_context": 0.96,
+            "h2h_context_bias": -0.0,
+            "total_score": 0.5396
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.075,
+            "current_form": 0.11,
+            "motivation": 0.12,
+            "squad_availability": 0.075,
+            "coach_factor": 0.054,
+            "schedule_context": 0.1056,
+            "h2h_context_bias": -0.0,
+            "share_pct": {
+              "baseline_strength": 13.9,
+              "current_form": 20.4,
+              "motivation": 22.2,
+              "squad_availability": 13.9,
+              "coach_factor": 10.0,
+              "schedule_context": 19.6,
+              "h2h_context_bias": -0.0
+            },
+            "total_weighted_sum": 0.5396
+          },
+          "summary_flags": []
+        },
+        "routing": {
+          "route": "league_full",
+          "reason": "league_full:high_confidence_league",
+          "tournament_type": "LEAGUE_REGULAR",
+          "category": "league"
+        },
+        "best_market": {
+          "market_key": "AWAY_NOT_LOSE",
+          "probability": 0.7128,
+          "book_odds": 1.95,
+          "edge": 0.2
+        },
+        "express_safety": {
+          "safety_class": "EXPRESS_AVOID",
+          "penalty_score": 0.62,
+          "reasons": [
+            "uncertain_lineups",
+            "new_coach_first_match",
+            "schedule_volatility",
+            "tight_match_balance"
+          ],
+          "allow_for_express": false
+        },
+        "top_markets": [
+          {
+            "market_key": "HOME_NOT_LOSE",
+            "probability": 0.7425
+          },
+          {
+            "market_key": "AWAY_NOT_LOSE",
+            "probability": 0.7128
+          },
+          {
+            "market_key": "OVER_1_5",
+            "probability": 0.6995
+          },
+          {
+            "market_key": "BTTS_YES",
+            "probability": 0.672
+          }
+        ]
+      }
+    },
+    {
+      "label": "pre_big_match_schedule_risk_synthetic",
+      "inspection": {
+        "scorer_name": "LeagueScorerV2",
+        "scoring_skipped": false,
+        "analysis_mode": "full_scoring",
+        "prediction_mode": "league_scored",
+        "overall_confidence": 0.68,
+        "snapshot_confidence": {
+          "match_meta_confidence": 0.5,
+          "teams_confidence": 0.5,
+          "squads_confidence": 0.5,
+          "coaches_confidence": 0.5,
+          "odds_confidence": 0.5,
+          "news_confidence": 0.5,
+          "schedule_confidence": 0.5,
+          "h2h_confidence": 0.5,
+          "data_freshness_score": 0.5,
+          "source_agreement_score": 0.5,
+          "overall_completeness_score": 0.5,
+          "overall_confidence_score": 0.68
+        },
+        "team_strength_r": {
+          "home": 0.4918,
+          "away": 0.5246,
+          "balance": 0.0328
+        },
+        "home": {
+          "team": "Home FC",
+          "season_phase": "LATE",
+          "special_overrides": [
+            "pre_big_match"
+          ],
+          "effective_weights": {
+            "baseline_strength": 0.1468,
+            "current_form": 0.2153,
+            "motivation": 0.2348,
+            "squad_availability": 0.1468,
+            "coach_factor": 0.0978,
+            "schedule_context": 0.1292,
+            "h2h_context_bias": 0.0294
+          },
+          "factor_scores": {
+            "baseline_strength": 0.85,
+            "current_form": 0.49999999999999994,
+            "motivation": 0.5,
+            "squad_availability": 0.5,
+            "coach_factor": 0.54,
+            "schedule_context": 0.78,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.45177103718199607
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.1248,
+            "current_form": 0.1076,
+            "motivation": 0.1174,
+            "squad_availability": 0.0734,
+            "coach_factor": 0.0528,
+            "schedule_context": 0.1007,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 21.6,
+              "current_form": 18.7,
+              "motivation": 20.4,
+              "squad_availability": 12.7,
+              "coach_factor": 9.2,
+              "schedule_context": 17.5,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.5768
+          },
+          "summary_flags": [
+            "schedule_risk",
+            "pre_big_match_risk",
+            "home_side"
+          ]
+        },
+        "away": {
+          "team": "Away FC",
+          "season_phase": "LATE",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.15,
+            "current_form": 0.22,
+            "motivation": 0.24,
+            "squad_availability": 0.15,
+            "coach_factor": 0.1,
+            "schedule_context": 0.11,
+            "h2h_context_bias": 0.03
+          },
+          "factor_scores": {
+            "baseline_strength": 0.4,
+            "current_form": 0.49999999999999994,
+            "motivation": 0.5,
+            "squad_availability": 0.5,
+            "coach_factor": 0.54,
+            "schedule_context": 0.96,
+            "h2h_context_bias": -0.0,
+            "total_score": 0.5246
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.06,
+            "current_form": 0.11,
+            "motivation": 0.12,
+            "squad_availability": 0.075,
+            "coach_factor": 0.054,
+            "schedule_context": 0.1056,
+            "h2h_context_bias": -0.0,
+            "share_pct": {
+              "baseline_strength": 11.4,
+              "current_form": 21.0,
+              "motivation": 22.9,
+              "squad_availability": 14.3,
+              "coach_factor": 10.3,
+              "schedule_context": 20.1,
+              "h2h_context_bias": -0.0
+            },
+            "total_weighted_sum": 0.5246
+          },
+          "summary_flags": []
+        },
+        "routing": {
+          "route": "league_full",
+          "reason": "league_full:high_confidence_league",
+          "tournament_type": "LEAGUE_REGULAR",
+          "category": "league"
+        },
+        "best_market": {
+          "market_key": "AWAY_NOT_LOSE",
+          "probability": 0.8507,
+          "book_odds": 1.95,
+          "edge": 0.3379
+        },
+        "express_safety": {
+          "safety_class": "EXPRESS_CAUTION",
+          "penalty_score": 0.27,
+          "reasons": [
+            "schedule_volatility",
+            "tight_match_balance"
+          ],
+          "allow_for_express": true
+        },
+        "top_markets": [
+          {
+            "market_key": "AWAY_NOT_LOSE",
+            "probability": 0.8507
+          },
+          {
+            "market_key": "HOME_NOT_LOSE",
+            "probability": 0.8182
+          },
+          {
+            "market_key": "OVER_1_5",
+            "probability": 0.79
+          },
+          {
+            "market_key": "BTTS_YES",
+            "probability": 0.75
+          }
+        ]
+      }
+    },
+    {
+      "label": "non_top5_botola",
+      "inspection": {
+        "scorer_name": "LeagueScorerV2",
+        "scoring_skipped": false,
+        "analysis_mode": "full_scoring",
+        "prediction_mode": "league_scored",
+        "overall_confidence": 0.6219,
+        "snapshot_confidence": {
+          "match_meta_confidence": 0.95,
+          "teams_confidence": 1.0,
+          "squads_confidence": 0.15,
+          "coaches_confidence": 0.2,
+          "odds_confidence": 0.85,
+          "news_confidence": 0.15,
+          "schedule_confidence": 0.49,
+          "h2h_confidence": 0.15,
+          "data_freshness_score": 0.45,
+          "source_agreement_score": 0.62,
+          "overall_completeness_score": 0.4925,
+          "overall_confidence_score": 0.6218750000000001
+        },
+        "team_strength_r": {
+          "home": 0.5937,
+          "away": 0.6226,
+          "balance": 0.0289
+        },
+        "home": {
+          "team": "Kawkab Marrakech",
+          "season_phase": "EARLY",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.3128,
+            "current_form": 0.2867,
+            "motivation": 0.1303,
+            "squad_availability": 0.0739,
+            "coach_factor": 0.086,
+            "schedule_context": 0.0838,
+            "h2h_context_bias": 0.0264
+          },
+          "factor_scores": {
+            "baseline_strength": 0.631578947368421,
+            "current_form": 0.49999999999999994,
+            "motivation": 0.4,
+            "squad_availability": 0.5298437500000001,
+            "coach_factor": 0.5,
+            "schedule_context": 0.9359999999999999,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.5536733633019498
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.1976,
+            "current_form": 0.1434,
+            "motivation": 0.0521,
+            "squad_availability": 0.0392,
+            "coach_factor": 0.043,
+            "schedule_context": 0.0784,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 35.7,
+              "current_form": 25.9,
+              "motivation": 9.4,
+              "squad_availability": 7.1,
+              "coach_factor": 7.8,
+              "schedule_context": 14.2,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.5537
+          },
+          "summary_flags": [
+            "thin_squad",
+            "home_side"
+          ]
+        },
+        "away": {
+          "team": "Raja Casablanca",
+          "season_phase": "EARLY",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.3128,
+            "current_form": 0.2867,
+            "motivation": 0.1303,
+            "squad_availability": 0.0739,
+            "coach_factor": 0.086,
+            "schedule_context": 0.0838,
+            "h2h_context_bias": 0.0264
+          },
+          "factor_scores": {
+            "baseline_strength": 0.7894736842105263,
+            "current_form": 0.49999999999999994,
+            "motivation": 0.55,
+            "squad_availability": 0.5298437500000001,
+            "coach_factor": 0.5,
+            "schedule_context": 0.9359999999999999,
+            "h2h_context_bias": -0.0,
+            "total_score": 0.6226140434480629
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.247,
+            "current_form": 0.1434,
+            "motivation": 0.0717,
+            "squad_availability": 0.0392,
+            "coach_factor": 0.043,
+            "schedule_context": 0.0784,
+            "h2h_context_bias": -0.0,
+            "share_pct": {
+              "baseline_strength": 39.7,
+              "current_form": 23.0,
+              "motivation": 11.5,
+              "squad_availability": 6.3,
+              "coach_factor": 6.9,
+              "schedule_context": 12.6,
+              "h2h_context_bias": -0.0
+            },
+            "total_weighted_sum": 0.6226
+          },
+          "summary_flags": [
+            "thin_squad"
+          ]
+        },
+        "routing": {
+          "route": "league_full",
+          "reason": "league_full:high_confidence_league",
+          "tournament_type": "LEAGUE_REGULAR",
+          "category": "league"
+        },
+        "best_market": {
+          "market_key": "AWAY_NOT_LOSE",
+          "probability": 0.7641,
+          "book_odds": 1.62,
+          "edge": 0.1468
+        },
+        "express_safety": {
+          "safety_class": "EXPRESS_CAUTION",
+          "penalty_score": 0.32,
+          "reasons": [
+            "uncertain_lineups",
+            "tight_match_balance"
+          ],
+          "allow_for_express": true
+        },
+        "top_markets": [
+          {
+            "market_key": "AWAY_NOT_LOSE",
+            "probability": 0.7641
+          },
+          {
+            "market_key": "HOME_NOT_LOSE",
+            "probability": 0.7426
+          },
+          {
+            "market_key": "OVER_1_5",
+            "probability": 0.7187
+          },
+          {
+            "market_key": "BTTS_YES",
+            "probability": 0.6886
+          }
+        ]
+      }
+    },
+    {
+      "label": "parked_domestic_cup",
+      "inspection": {
+        "scorer_name": "routing_parked",
+        "scoring_skipped": true,
+        "analysis_mode": "analysis_only",
+        "prediction_mode": "parked_analysis_only",
+        "overall_confidence": 0.3027,
+        "snapshot_confidence": {
+          "match_meta_confidence": 0.75,
+          "teams_confidence": 0.15,
+          "squads_confidence": 0.15,
+          "coaches_confidence": 0.2,
+          "odds_confidence": 0.15,
+          "news_confidence": 0.15,
+          "schedule_confidence": 0.15,
+          "h2h_confidence": 0.15,
+          "data_freshness_score": 0.45,
+          "source_agreement_score": 0.45,
+          "overall_completeness_score": 0.23125,
+          "overall_confidence_score": 0.3026875
+        },
+        "team_strength_r": {
+          "home": 0.54,
+          "away": 0.5,
+          "balance": 0.04
+        },
+        "home": {
+          "team": "Arsenal",
+          "season_phase": "EARLY",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.2369,
+            "current_form": 0.2172,
+            "motivation": 0.0987,
+            "squad_availability": 0.1382,
+            "coach_factor": 0.1609,
+            "schedule_context": 0.0987,
+            "h2h_context_bias": 0.0494
+          },
+          "factor_scores": {
+            "baseline_strength": 0.5,
+            "current_form": 0.5,
+            "motivation": 0.5,
+            "squad_availability": 0.5,
+            "coach_factor": 0.5,
+            "schedule_context": 0.5,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.5
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.1185,
+            "current_form": 0.1086,
+            "motivation": 0.0494,
+            "squad_availability": 0.0691,
+            "coach_factor": 0.0804,
+            "schedule_context": 0.0494,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 24.9,
+              "current_form": 22.8,
+              "motivation": 10.4,
+              "squad_availability": 14.5,
+              "coach_factor": 16.9,
+              "schedule_context": 10.4,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.4753
+          },
+          "summary_flags": []
+        },
+        "away": {
+          "team": "Chelsea",
+          "season_phase": "EARLY",
+          "special_overrides": [],
+          "effective_weights": {
+            "baseline_strength": 0.2369,
+            "current_form": 0.2172,
+            "motivation": 0.0987,
+            "squad_availability": 0.1382,
+            "coach_factor": 0.1609,
+            "schedule_context": 0.0987,
+            "h2h_context_bias": 0.0494
+          },
+          "factor_scores": {
+            "baseline_strength": 0.5,
+            "current_form": 0.5,
+            "motivation": 0.5,
+            "squad_availability": 0.5,
+            "coach_factor": 0.5,
+            "schedule_context": 0.5,
+            "h2h_context_bias": 0.0,
+            "total_score": 0.5
+          },
+          "weighted_contributions": {
+            "baseline_strength": 0.1185,
+            "current_form": 0.1086,
+            "motivation": 0.0494,
+            "squad_availability": 0.0691,
+            "coach_factor": 0.0804,
+            "schedule_context": 0.0494,
+            "h2h_context_bias": 0.0,
+            "share_pct": {
+              "baseline_strength": 24.9,
+              "current_form": 22.8,
+              "motivation": 10.4,
+              "squad_availability": 14.5,
+              "coach_factor": 16.9,
+              "schedule_context": 10.4,
+              "h2h_context_bias": 0.0
+            },
+            "total_weighted_sum": 0.4753
+          },
+          "summary_flags": []
+        },
+        "routing": {
+          "route": "non_league_parked",
+          "reason": "parked:domestic_cup",
+          "tournament_type": "DOMESTIC_CUP",
+          "category": "domestic_cup"
+        },
+        "parked_context": {
+          "mode": "analysis_only",
+          "route": "non_league_parked",
+          "tournament_type": "DOMESTIC_CUP",
+          "category": "domestic_cup",
+          "reason": "parked:domestic_cup",
+          "book_odds_available": false,
+          "book_odds_markets_count": 0,
+          "news_available": false,
+          "standings_available": false,
+          "snapshot_confidence": 0.3026875,
+          "snapshot_completeness": 0.23125,
+          "can_build_express": false,
+          "data_quality_note": "very_low_data"
+        },
+        "express_safety": {
+          "safety_class": "EXPRESS_CAUTION",
+          "penalty_score": 0.0,
+          "reasons": [
+            "parked:domestic_cup",
+            "analysis_only_mode",
+            "route:non_league_parked",
+            "express_not_available_for_parked",
+            "data_quality:very_low_data"
+          ],
+          "allow_for_express": false
+        },
+        "top_markets": []
+      }
+    }
+  ],
+  "baseline_comparison": {
+    "source": "C:\\Users\\p7758\\PycharmProjects\\RobinHoodForecast\\football_agent\\data\\reports\\stage2_baseline_full.json",
+    "note": "stage2 baseline used flat legacy weights; current run uses blueprint phase weights",
+    "baseline_best_market_avg_prob": [
+      {
+        "range": "[0.50,0.60)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.60,0.70)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.70,0.80)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.80,0.90)",
+        "count": 4,
+        "predicted_avg": 0.8217,
+        "wins": 4,
+        "actual_winrate": 1.0
+      },
+      {
+        "range": "[0.90,1.01]",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      }
+    ]
+  },
+  "delta_vs_stage2_baseline": {
+    "best_market_hit_rate_old": 1.0,
+    "best_market_hit_rate_new": 0.75,
+    "calibration_buckets_old": [
+      {
+        "range": "[0.50,0.60)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.60,0.70)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.70,0.80)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.80,0.90)",
+        "count": 4,
+        "predicted_avg": 0.8217,
+        "wins": 4,
+        "actual_winrate": 1.0
+      },
+      {
+        "range": "[0.90,1.01]",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      }
+    ],
+    "calibration_buckets_new": [
+      {
+        "range": "[0.50,0.60)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.60,0.70)",
+        "count": 3,
+        "predicted_avg": 0.6475,
+        "wins": 2,
+        "actual_winrate": 0.6667
+      },
+      {
+        "range": "[0.70,0.80)",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      },
+      {
+        "range": "[0.80,0.90)",
+        "count": 1,
+        "predicted_avg": 0.8628,
+        "wins": 1,
+        "actual_winrate": 1.0
+      },
+      {
+        "range": "[0.90,1.01]",
+        "count": 0,
+        "predicted_avg": null,
+        "wins": 0,
+        "actual_winrate": null
+      }
+    ],
+    "interpretation": "Same 4 fixture runs; differences reflect scorer tuning + enriched snapshot builder, not new historical data."
+  }
+}

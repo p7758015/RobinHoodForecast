@@ -27,6 +27,7 @@ from football_agent.domain.models import Match
 from football_agent.domain.models_v2 import MatchPredictionResultV2
 from football_agent.normalizers.match_snapshot_builder import MatchSnapshotBuilder
 from football_agent.normalizers.team_name_resolver import resolve_match_by_teams
+from football_agent.competition_policy import is_analysis_allowed
 from football_agent.scorers.league_scorer_v2 import LeagueScorerV2
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,23 @@ class LeagueAnalysisServiceV2:
         date_str: str,
         competition_code: Optional[str] = None,
     ) -> List[MatchPredictionResultV2]:
+        if competition_code:
+            decision = is_analysis_allowed(competition_code)
+            if not decision.allowed:
+                logger.warning(
+                    "Analysis policy skip competition=%s reason=%s warning=%s",
+                    decision.competition_code,
+                    decision.reason,
+                    decision.warning,
+                )
+                return []
+            if decision.warning:
+                logger.warning(
+                    "Analysis policy note competition=%s warning=%s",
+                    decision.competition_code,
+                    decision.warning,
+                )
+
         matches = self._matches_for_date(date_str, competition_code)
         total = len(matches)
         logger.info(
@@ -64,6 +82,23 @@ class LeagueAnalysisServiceV2:
         results: List[MatchPredictionResultV2] = []
         skipped = 0
         for match in matches:
+            match_policy = is_analysis_allowed(match.competition_code)
+            if not match_policy.allowed:
+                skipped += 1
+                logger.warning(
+                    "Skipped match id=%s competition=%s: analysis policy %s",
+                    match.id,
+                    match_policy.competition_code,
+                    match_policy.warning,
+                )
+                continue
+            if match_policy.warning:
+                logger.warning(
+                    "Analysis policy note match id=%s competition=%s: %s",
+                    match.id,
+                    match_policy.competition_code,
+                    match_policy.warning,
+                )
             try:
                 results.append(self.analyze_single_match(match))
             except Exception as e:

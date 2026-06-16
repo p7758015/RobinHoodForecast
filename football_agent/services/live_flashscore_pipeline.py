@@ -14,17 +14,23 @@ from typing import Dict, List, Optional
 
 from football_agent import config
 from football_agent.analysis_merge.merge import merge_match_context_v2
-from football_agent.domain.models import Team
+from football_agent.merge.news_merge import merge_news_into_merged_context
 from football_agent.flashscore.adapters.errors import (
     FlashscoreScraperConfigurationError,
     FlashscoreScraperError,
     FlashscoreScraperUnavailableError,
 )
 from football_agent.flashscore.adapters.http_backend import HttpFlashscoreScraperAdapter
+from football_agent.collectors.contracts import MatchCollectionBundle
+from football_agent.collectors.odds_bridge import (
+    OddsBridgeSource,
+    refresh_odds_source_status,
+    resolve_pipeline_odds_context,
+)
 from football_agent.flashscore.models import FlashscoreMatchFacts
 from football_agent.flashscore.service import FlashscoreIngestionService
 from football_agent.normalizers.merged_snapshot_builder_v2 import MergedSnapshotBuilderV2
-from football_agent.normalizers.team_name_resolver import score_team_query
+from football_agent.services.flashscore_facts_resolver import pick_facts_by_teams
 from football_agent.output.match_context_display import extract_openclaw_highlights
 from football_agent.services.enrichment_contract import (
     SOURCE_FAILED,
@@ -44,6 +50,7 @@ from football_agent.services.competition_guardrails import (
     apply_competition_guardrails,
 )
 from football_agent.services.scoring_service_v2 import ScoredRunV2, ScoringServiceV2
+from football_agent.scorers.routing import ScorerRoutingDecision
 from football_agent.services.source_completeness import (
     SourceCompletenessReport,
     build_completeness_report,
@@ -74,43 +81,11 @@ class LivePipelineResult:
     enrichment_backend: Optional[str] = None
     competition_classification: Optional[CompetitionClassification] = None
     competition_guardrail: Optional[CompetitionGuardrailResult] = None
+    routing_decision: Optional[ScorerRoutingDecision] = None
 
 
 def _resolve_scraper_url(cli_url: Optional[str] = None) -> Optional[str]:
     return (cli_url or config.FLASHSCORE_SCRAPER_URL or "").strip().rstrip("/") or None
-
-
-def _pick_facts_by_teams(
-    facts_list: List[FlashscoreMatchFacts],
-    home_query: str,
-    away_query: str,
-    *,
-    min_score: float = 0.72,
-) -> tuple[Optional[FlashscoreMatchFacts], Optional[str]]:
-    if not facts_list:
-        return None, "На указанную дату матчей не найдено."
-
-    scored: List[tuple[FlashscoreMatchFacts, float]] = []
-    for facts in facts_list:
-        home_team = Team(id=0, name=facts.meta.home_team_name, short_name=facts.meta.home_team_name)
-        away_team = Team(id=0, name=facts.meta.away_team_name, short_name=facts.meta.away_team_name)
-        sh = score_team_query(home_query, home_team)
-        sa = score_team_query(away_query, away_team)
-        combined = (sh + sa) / 2.0
-        if sh >= 0.5 and sa >= 0.5:
-            scored.append((facts, combined))
-
-    if not scored:
-        return None, f"Матч не найден: {home_query} — {away_query}."
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    best, best_score = scored[0]
-    if best_score < min_score:
-        return None, (
-            f"Матч не найден уверенно: {home_query} — {away_query} "
-            f"(score {best_score:.2f})."
-        )
-    return best, None
 
 
 class LiveFlashscorePipeline:
@@ -127,6 +102,8 @@ class LiveFlashscorePipeline:
         odds_url: Optional[str] = None,
         odds_api_key: Optional[str] = None,
         skip_odds: bool = False,
+        fixtures_dir: str | Path | None = None,
+        odds_fixture_stem: Optional[str] = None,
         db_path: str | Path | None = None,
         persist: bool = True,
     ) -> None:
@@ -138,6 +115,8 @@ class LiveFlashscorePipeline:
         self._odds_url = odds_url
         self._odds_api_key = odds_api_key
         self._skip_odds = skip_odds
+        self._fixtures_dir = Path(fixtures_dir) if fixtures_dir else None
+        self._odds_fixture_stem = (odds_fixture_stem or "").strip() or None
         self._db_path = db_path
         self._persist = persist
 
@@ -163,6 +142,68 @@ class LiveFlashscorePipeline:
             competition_code=competition_code,
         )
 
+    def _load_odds_fixture(
+        self,
+    ) -> tuple[Optional[Any], Dict[str, str], List[str]]:
+        from football_agent.odds.adapters.fixture_backend import FixtureFileOddsAdapter
+        from football_agent.odds.models import MatchOddsContext
+        from football_agent.odds.service import OddsIngestionService
+
+        warnings: List[str] = []
+        if not self._fixtures_dir:
+            return None, {"odds": "failed"}, ["odds_fixture_requires_fixtures_dir"]
+        ctx: Optional[MatchOddsContext] = OddsIngestionService(
+            FixtureFileOddsAdapter(self._fixtures_dir),
+        ).get_odds_for_fixture(self._odds_fixture_stem or "")
+        if ctx is None:
+            return None, {"odds": "failed"}, [f"odds_fixture_not_found:{self._odds_fixture_stem}"]
+        return ctx, {"odds": "fixture"}, warnings
+
+    def _fetch_facts_collector(
+        self,
+        scraper_url: str,
+        *,
+        match_url: Optional[str],
+        home: Optional[str],
+        away: Optional[str],
+        date_str: Optional[str],
+        competition_code: Optional[str],
+    ) -> tuple[
+        Optional[FlashscoreMatchFacts],
+        Dict[str, str],
+        Optional[str],
+        List[str],
+        Optional[MatchCollectionBundle],
+    ]:
+        from football_agent.services.match_collection_service import MatchCollectionService
+
+        svc = MatchCollectionService(
+            scraper_url,
+            api_key=self._scraper_api_key or config.FLASHSCORE_SCRAPER_API_KEY,
+            timeout_s=config.FLASHSCORE_SCRAPER_TIMEOUT_S,
+        )
+        if match_url:
+            result = svc.collect_for_url(match_url)
+        elif home and away and date_str:
+            result = svc.collect_for_teams(home, away, date_str, competition_code=competition_code)
+        else:
+            return None, {"flashscore": "failed", "collector": "skipped"}, "Нужны команды и дата.", [], None
+
+        sources: Dict[str, str] = {"collector": "ok" if result.success else "failed"}
+        if result.aborted:
+            sources["flashscore"] = "failed"
+            sources["collector"] = "aborted"
+            return None, sources, result.error_message, list(result.warnings or []), result.bundle
+
+        if not result.success or not result.facts:
+            sources["flashscore"] = "failed"
+            return None, sources, result.error_message, list(result.warnings or []), result.bundle
+
+        sources["flashscore"] = "ok"
+        if result.bundle:
+            sources["collector_status"] = result.bundle.overall_status
+        return result.facts, sources, None, list(result.warnings or []), result.bundle
+
     def _fetch_facts(
         self,
         scraper_url: str,
@@ -172,7 +213,7 @@ class LiveFlashscorePipeline:
         away: Optional[str],
         date_str: Optional[str],
         competition_code: Optional[str],
-    ) -> tuple[Optional[FlashscoreMatchFacts], Dict[str, str], Optional[str]]:
+    ) -> tuple[Optional[FlashscoreMatchFacts], Dict[str, str], Optional[str], Optional[dict]]:
         adapter = HttpFlashscoreScraperAdapter(
             scraper_url,
             api_key=self._scraper_api_key or config.FLASHSCORE_SCRAPER_API_KEY,
@@ -182,26 +223,41 @@ class LiveFlashscorePipeline:
 
         if match_url:
             try:
-                facts = service.get_facts_for_match(match_url)
+                raw = adapter.fetch_match_raw(match_url)
             except (FlashscoreScraperUnavailableError, FlashscoreScraperError) as exc:
-                return None, {"flashscore": "failed"}, str(exc)
-            if not facts:
-                return None, {"flashscore": "failed"}, "Пустой ответ scraper."
-            return facts, {"flashscore": "ok"}, None
+                return None, {"flashscore": "failed"}, str(exc), None
+            if not raw:
+                return None, {"flashscore": "failed"}, "Пустой ответ scraper.", None
+            facts = service._map_raw_to_facts(raw)  # type: ignore[attr-defined]
+            return facts, {"flashscore": "ok"}, None, raw
 
         if not (home and away and date_str):
-            return None, {"flashscore": "failed"}, "Нужны команды и дата."
+            return None, {"flashscore": "failed"}, "Нужны команды и дата.", None
 
         try:
             raw_list = adapter.fetch_matches_for_date(date_str, competition_code)
             facts_list = [service._map_raw_to_facts(raw) for raw in raw_list]  # type: ignore[attr-defined]
         except (FlashscoreScraperUnavailableError, FlashscoreScraperError) as exc:
-            return None, {"flashscore": "failed"}, str(exc)
+            return None, {"flashscore": "failed"}, str(exc), None
 
-        facts, err = _pick_facts_by_teams(facts_list, home, away)
+        facts, err = pick_facts_by_teams(facts_list, home, away)
         if err or not facts:
-            return None, {"flashscore": "failed"}, err or "Матч не найден."
-        return facts, {"flashscore": "ok"}, None
+            return None, {"flashscore": "failed"}, err or "Матч не найден.", None
+
+        matched_raw: Optional[dict] = None
+        for raw in raw_list:
+            if str(raw.get("match_id") or "") == facts.meta.match_id:
+                matched_raw = raw
+                break
+        if matched_raw is None:
+            for raw in raw_list:
+                if (
+                    str(raw.get("home_team_name") or raw.get("home") or "") == facts.meta.home_team_name
+                    and str(raw.get("away_team_name") or raw.get("away") or "") == facts.meta.away_team_name
+                ):
+                    matched_raw = raw
+                    break
+        return facts, {"flashscore": "ok"}, None, matched_raw
 
     def _run(
         self,
@@ -226,15 +282,33 @@ class LiveFlashscorePipeline:
                 sources={"flashscore": "not_configured"},
             )
 
+        collector_warnings: List[str] = []
+        collector_bundle: Optional[MatchCollectionBundle] = None
+        flashscore_raw: Optional[dict] = None
         try:
-            facts, sources, fetch_err = self._fetch_facts(
-                scraper_url,
-                match_url=match_url,
-                home=home,
-                away=away,
-                date_str=date_str,
-                competition_code=competition_code,
-            )
+            if config.USE_COLLECTOR_LAYER:
+                facts, sources, fetch_err, collector_warnings, collector_bundle = self._fetch_facts_collector(
+                    scraper_url,
+                    match_url=match_url,
+                    home=home,
+                    away=away,
+                    date_str=date_str,
+                    competition_code=competition_code,
+                )
+            else:
+                fetch_out = self._fetch_facts(
+                    scraper_url,
+                    match_url=match_url,
+                    home=home,
+                    away=away,
+                    date_str=date_str,
+                    competition_code=competition_code,
+                )
+                if len(fetch_out) >= 4:
+                    facts, sources, fetch_err, flashscore_raw = fetch_out
+                else:
+                    facts, sources, fetch_err = fetch_out  # type: ignore[misc]
+                    flashscore_raw = None
         except FlashscoreScraperConfigurationError as exc:
             logger.error("Flashscore config error: %s", exc)
             return LivePipelineResult(
@@ -262,6 +336,7 @@ class LiveFlashscorePipeline:
                 sources=sources,
             )
 
+        skip_live_odds = self._skip_odds or bool(self._odds_fixture_stem)
         enrichment: EnrichmentFetchResult = fetch_enrichment_for_facts(
             facts,
             openclaw_url=self._openclaw_url,
@@ -269,7 +344,7 @@ class LiveFlashscorePipeline:
             skip_openclaw=self._skip_openclaw,
             odds_url=self._odds_url,
             odds_api_key=self._odds_api_key,
-            skip_odds=self._skip_odds,
+            skip_odds=skip_live_odds,
             home_override=home,
             away_override=away,
             date_override=date_str,
@@ -277,9 +352,46 @@ class LiveFlashscorePipeline:
             match_url_override=match_url,
         )
         oc_ctx = enrichment.context
-        odds_ctx = enrichment.odds
+        enrichment_odds = enrichment.odds
         sources.update(enrichment.sources)
         warnings: List[str] = list(enrichment.warnings)
+        if collector_warnings:
+            warnings.extend(collector_warnings)
+
+        fixture_odds = None
+        if self._odds_fixture_stem:
+            fixture_odds, fixture_src, fixture_warn = self._load_odds_fixture()
+            sources.update(fixture_src)
+            warnings.extend(fixture_warn)
+
+        from football_agent.collectors.odds_bridge import build_odds_bundle_from_flashscore_raw
+
+        embedded_odds_bundle: Optional[MatchCollectionBundle] = None
+        if (
+            not config.USE_COLLECTOR_LAYER
+            and config.USE_EMBEDDED_FLASHSCORE_ODDS
+            and flashscore_raw
+        ):
+            embedded_odds_bundle = build_odds_bundle_from_flashscore_raw(
+                flashscore_raw,
+                match_key=facts.meta.match_id or "flashscore",
+            )
+            if embedded_odds_bundle is not None:
+                warnings.append("odds_embedded_flashscore_raw")
+
+        effective_collector_bundle = collector_bundle or embedded_odds_bundle
+
+        odds_bridge_source: OddsBridgeSource = "none"
+        odds_ctx, bridge_warnings, odds_bridge_source = resolve_pipeline_odds_context(
+            facts=facts,
+            collector_bundle=effective_collector_bundle,
+            enrichment_odds=None if skip_live_odds else enrichment_odds,
+            fixture_odds=fixture_odds,
+        )
+        warnings.extend(bridge_warnings)
+        if odds_bridge_source != "none":
+            sources["odds_bridge"] = odds_bridge_source
+        refresh_odds_source_status(sources, odds_ctx)
         context_highlights = extract_openclaw_highlights(oc_ctx)
         enrichment_mode = enrichment.enrichment_mode
         odds_source = enrichment.odds_source
@@ -294,9 +406,26 @@ class LiveFlashscorePipeline:
                 openclaw_context=oc_ctx,
                 odds_context=odds_ctx,
             )
+            merged = merge_news_into_merged_context(merged, enrichment.news)
             snapshot, report = MergedSnapshotBuilderV2().build_with_report(merged)
-            scored = ScoringServiceV2().score_snapshot_with_report(snapshot, report)
-            scored, competition_guardrail = apply_competition_guardrails(scored, competition_clf)
+            scored = ScoringServiceV2().score_snapshot_with_report(
+                snapshot,
+                report,
+                classification=competition_clf,
+            )
+            routing_decision = scored.routing_decision
+            if routing_decision and routing_decision.route == "league_full":
+                scored, competition_guardrail = apply_competition_guardrails(scored, competition_clf)
+            else:
+                from football_agent.services.competition_guardrails import CompetitionGuardrailResult
+
+                competition_guardrail = CompetitionGuardrailResult(
+                    classification=competition_clf,
+                    guardrail_applied=False,
+                    confidence_penalty=0.0,
+                    original_confidence=scored.prediction.overall_confidence_score,
+                    adjusted_confidence=scored.prediction.overall_confidence_score,
+                )
         except Exception as exc:
             logger.exception("Pipeline failed after flashscore ingest path=%s", path)
             return LivePipelineResult(
@@ -316,7 +445,8 @@ class LiveFlashscorePipeline:
         elif oc_status == SOURCE_SKIPPED:
             warnings.append("openclaw_context_skipped")
         elif oc_status == SOURCE_SKIPPED_NOT_CONFIGURED:
-            warnings.append("openclaw_enrichment_not_configured")
+            if sources.get("brave_news") not in ("ok", "partial"):
+                warnings.append("openclaw_enrichment_not_configured")
         elif oc_status == SOURCE_PARTIAL:
             warnings.append("openclaw_context_partial")
         if openclaw_link in ("provided_without_link", "unlinked") and oc_ctx is not None:
@@ -340,6 +470,8 @@ class LiveFlashscorePipeline:
             warnings.extend(report.merge_warnings[:2])
         if scored.scoring_warnings:
             warnings.extend(scored.scoring_warnings[:2])
+        if routing_decision is not None:
+            warnings.append(f"scorer_route:{routing_decision.route}")
         if competition_guardrail.guardrail_applied:
             warnings.extend(competition_guardrail.warnings)
 
@@ -411,6 +543,7 @@ class LiveFlashscorePipeline:
             enrichment_backend=enrichment_backend,
             competition_classification=competition_clf,
             competition_guardrail=competition_guardrail,
+            routing_decision=routing_decision,
         )
 
 

@@ -26,9 +26,14 @@ from football_agent.openclaw_context.adapters.errors import (
     OpenClawContextUnavailableError,
 )
 from football_agent.openclaw_context.adapters.http_backend import HttpOpenClawContextAdapter
+from football_agent.news_context.models import MatchNewsContext
 from football_agent.openclaw_context.models import OpenClawMatchContext
 from football_agent.openclaw_context.service import OpenClawContextIngestionService
-from football_agent.services.enrichment_config import EnrichmentRouting, resolve_enrichment_routing
+from football_agent.services.enrichment_config import (
+    EnrichmentRouting,
+    enrichment_uses_bridge,
+    resolve_enrichment_routing,
+)
 from football_agent.services.enrichment_contract import (
     ENRICHMENT_CONTEXT_PATH,
     ENRICHMENT_MODE_UNIFIED,
@@ -51,6 +56,7 @@ logger = logging.getLogger(__name__)
 class EnrichmentFetchResult:
     context: Optional[OpenClawMatchContext] = None
     odds: Optional[MatchOddsContext] = None
+    news: Optional[MatchNewsContext] = None
     sources: Dict[str, str] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
     routing: Optional[EnrichmentRouting] = None
@@ -301,19 +307,34 @@ def fetch_enrichment_for_facts(
 
     if not routing.configured:
         sources = {"openclaw": SOURCE_SKIPPED_NOT_CONFIGURED, "odds": SOURCE_SKIPPED_NOT_CONFIGURED}
-        warnings.append("enrichment_not_configured")
-        logger.debug("Enrichment skipped — no OpenClaw base or odds URL configured")
-        return EnrichmentFetchResult(
-            context=None,
+        from football_agent.services.openclaw_news_enrichment import brave_news_enabled
+
+        if not brave_news_enabled():
+            warnings.append("enrichment_not_configured")
+            logger.debug("Enrichment skipped — no OpenClaw/odds URL and Brave disabled")
+        else:
+            logger.debug("OpenClaw/odds not configured — Brave-only enrichment path")
+        return _complete_enrichment_result(
+            facts=facts,
+            ctx=None,
             odds=None,
             sources=sources,
             warnings=warnings,
             routing=routing,
+            openclaw_url=openclaw_url,
         )
 
     if skip_openclaw and skip_odds:
         sources = {"openclaw": SOURCE_SKIPPED, "odds": SOURCE_SKIPPED}
-        return EnrichmentFetchResult(context=None, odds=None, sources=sources, warnings=warnings, routing=routing)
+        return _complete_enrichment_result(
+            facts=facts,
+            ctx=None,
+            odds=None,
+            sources=sources,
+            warnings=warnings,
+            routing=routing,
+            openclaw_url=openclaw_url,
+        )
 
     if routing.enrichment_mode == ENRICHMENT_MODE_UNIFIED and routing.openclaw_configured and not skip_openclaw:
         ctx, odds, sources, uni_warnings = _fetch_unified(routing, token, openclaw_api_key)
@@ -322,14 +343,14 @@ def fetch_enrichment_for_facts(
             w.startswith("enrichment_unified_fetch_failed:") for w in uni_warnings
         )
         if not unified_transport_failed:
-            _annotate_partial_enrichment(ctx, odds, sources, warnings, routing)
-            sources["enrichment_backend"] = "openclaw_unified"
-            return EnrichmentFetchResult(
-                context=ctx,
+            return _complete_enrichment_result(
+                facts=facts,
+                ctx=ctx,
                 odds=odds,
                 sources=sources,
                 warnings=warnings,
                 routing=routing,
+                openclaw_url=openclaw_url,
             )
         logger.info("Unified enrichment transport failed — falling back to split endpoints")
         warnings.append("enrichment_unified_fallback_split")
@@ -348,18 +369,79 @@ def fetch_enrichment_for_facts(
     else:
         sources["odds"] = SOURCE_SKIPPED
 
+    return _complete_enrichment_result(
+        facts=facts,
+        ctx=ctx,
+        odds=odds,
+        sources=sources,
+        warnings=warnings,
+        routing=routing,
+        openclaw_url=openclaw_url,
+    )
+
+
+def _complete_enrichment_result(
+    *,
+    facts: FlashscoreMatchFacts,
+    ctx: Optional[OpenClawMatchContext],
+    odds: Optional[MatchOddsContext],
+    sources: Dict[str, str],
+    warnings: List[str],
+    routing: EnrichmentRouting,
+    openclaw_url: Optional[str],
+) -> EnrichmentFetchResult:
     _annotate_partial_enrichment(ctx, odds, sources, warnings, routing)
-    sources["enrichment_backend"] = _backend_label(routing)
+    news = _fetch_brave_news_if_enabled(facts, ctx, warnings, sources)
+    backend = _backend_label(routing, openclaw_url_override=openclaw_url)
+    if backend == "none" and sources.get("brave_news") in (SOURCE_OK, SOURCE_PARTIAL):
+        backend = "brave"
+    sources["enrichment_backend"] = backend
     return EnrichmentFetchResult(
         context=ctx,
         odds=odds,
+        news=news,
         sources=sources,
         warnings=warnings,
         routing=routing,
     )
 
 
-def _backend_label(routing: EnrichmentRouting) -> str:
+def _fetch_brave_news_if_enabled(
+    facts: FlashscoreMatchFacts,
+    openclaw_ctx: Optional[OpenClawMatchContext],
+    warnings: List[str],
+    sources: Dict[str, str],
+) -> Optional[MatchNewsContext]:
+    from football_agent.services.openclaw_news_enrichment import brave_news_enabled, enrich_match_news_from_brave
+
+    if not brave_news_enabled():
+        sources["brave_news"] = SOURCE_SKIPPED_NOT_CONFIGURED
+        return None
+    try:
+        news = enrich_match_news_from_brave(facts, openclaw_context=openclaw_ctx)
+        if news is None:
+            sources["brave_news"] = SOURCE_SKIPPED_NOT_CONFIGURED
+            return None
+        if news.source_count > 0 and news.confidence >= 0.4:
+            sources["brave_news"] = SOURCE_OK
+        elif news.source_count > 0:
+            sources["brave_news"] = SOURCE_PARTIAL
+        else:
+            sources["brave_news"] = SOURCE_FAILED
+            warnings.append("brave_news_empty")
+        warnings.extend(news.warnings or [])
+        return news
+    except Exception as exc:
+        warnings.append(f"brave_news_fetch_failed:{exc}")
+        sources["brave_news"] = SOURCE_FAILED
+        if not config.OPENCLAW_FAIL_SOFT:
+            raise
+        return None
+
+
+def _backend_label(routing: EnrichmentRouting, *, openclaw_url_override: Optional[str] = None) -> str:
+    if enrichment_uses_bridge(base_url=openclaw_url_override):
+        return "openclaw_bridge"
     if routing.openclaw_configured and routing.odds_separate_service:
         return "openclaw+odds_separate"
     if routing.openclaw_configured:

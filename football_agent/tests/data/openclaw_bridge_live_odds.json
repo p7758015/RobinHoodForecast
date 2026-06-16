@@ -1,0 +1,10 @@
+{
+  "markets": {
+    "home_win": {"odds_value": 2.35, "bookmaker_name": "openclaw_bridge", "confidence": "MEDIUM"},
+    "away_win": {"odds_value": 3.10, "bookmaker_name": "openclaw_bridge", "confidence": "MEDIUM"},
+    "double_chance_1x": {"odds_value": 1.38, "bookmaker_name": "openclaw_bridge", "confidence": "MEDIUM"},
+    "double_chance_x2": {"odds_value": 1.52, "bookmaker_name": "openclaw_bridge", "confidence": "MEDIUM"},
+    "over_1_5": {"odds_value": 1.28, "bookmaker_name": "openclaw_bridge", "confidence": "MEDIUM"},
+    "btts_yes": {"odds_value": 1.85, "bookmaker_name": "openclaw_bridge", "confidence": "LOW"}
+  }
+}

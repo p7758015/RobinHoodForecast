@@ -27,10 +27,12 @@ def _facts() -> FlashscoreMatchFacts:
 
 
 def test_fetch_not_configured_returns_skipped_statuses() -> None:
-    with patch("football_agent.services.enrichment_config.config.OPENCLAW_BASE_URL", None):
-        with patch("football_agent.services.enrichment_config.config.OPENCLAW_CONTEXT_BASE_URL", None):
-            with patch("football_agent.services.enrichment_config.config.ODDS_SERVICE_URL", None):
-                result = fetch_enrichment_for_facts(_facts())
+    with patch("football_agent.services.openclaw_news_enrichment.brave_news_enabled", return_value=False):
+        with patch("football_agent.services.enrichment_config.config.OPENCLAW_BRIDGE_BASE_URL", None):
+            with patch("football_agent.services.enrichment_config.config.OPENCLAW_BASE_URL", None):
+                with patch("football_agent.services.enrichment_config.config.OPENCLAW_CONTEXT_BASE_URL", None):
+                    with patch("football_agent.services.enrichment_config.config.ODDS_SERVICE_URL", None):
+                        result = fetch_enrichment_for_facts(_facts())
     assert result.context is None
     assert result.odds is None
     assert result.sources["openclaw"] == SOURCE_SKIPPED_NOT_CONFIGURED
@@ -69,9 +71,10 @@ def test_fetch_split_openclaw_context_without_odds(mock_odds, mock_ctx) -> None:
     mock_ctx.return_value = (ctx, "ok", [])
     mock_odds.return_value = (None, SOURCE_FAILED, ["odds_empty_response"])
 
-    with patch("football_agent.services.enrichment_config.config.OPENCLAW_BASE_URL", "http://oc"):
-        with patch("football_agent.services.enrichment_config.config.ODDS_SERVICE_URL", None):
-            result = fetch_enrichment_for_facts(_facts())
+    with patch("football_agent.services.enrichment_config.config.OPENCLAW_BRIDGE_BASE_URL", None):
+        with patch("football_agent.services.enrichment_config.config.OPENCLAW_BASE_URL", "http://oc"):
+            with patch("football_agent.services.enrichment_config.config.ODDS_SERVICE_URL", None):
+                result = fetch_enrichment_for_facts(_facts())
 
     assert result.context is not None
     assert result.odds is None
@@ -86,3 +89,48 @@ def test_enrichment_result_properties() -> None:
         routing=None,
     )
     assert result.enrichment_mode == "not_configured"
+
+
+@patch("football_agent.services.openclaw_news_enrichment.enrich_match_news_from_brave")
+@patch("football_agent.services.openclaw_news_enrichment.brave_news_enabled", return_value=True)
+def test_fetch_brave_only_without_openclaw_or_odds(mock_enabled, mock_brave) -> None:
+    from football_agent.news_context.models import MatchNewsContext
+    from datetime import datetime, timezone
+
+    mock_brave.return_value = MatchNewsContext(
+        match_id="m1",
+        home_team="Home",
+        away_team="Away",
+        source_count=2,
+        confidence=0.6,
+        collected_at_utc=datetime.now(timezone.utc),
+    )
+
+    with patch("football_agent.services.enrichment_config.config.OPENCLAW_BRIDGE_BASE_URL", None):
+        with patch("football_agent.services.enrichment_config.config.OPENCLAW_BASE_URL", None):
+            with patch("football_agent.services.enrichment_config.config.OPENCLAW_CONTEXT_BASE_URL", None):
+                with patch("football_agent.services.enrichment_config.config.ODDS_SERVICE_URL", None):
+                    result = fetch_enrichment_for_facts(_facts())
+
+    assert result.context is None
+    assert result.odds is None
+    assert result.news is not None
+    assert result.news.source_count == 2
+    assert result.sources["openclaw"] == SOURCE_SKIPPED_NOT_CONFIGURED
+    assert result.sources["odds"] == SOURCE_SKIPPED_NOT_CONFIGURED
+    assert result.sources["brave_news"] == "ok"
+    assert result.sources["enrichment_backend"] == "brave"
+    assert "enrichment_not_configured" not in result.warnings
+    mock_brave.assert_called_once()
+
+
+@patch("football_agent.services.openclaw_news_enrichment.brave_news_enabled", return_value=False)
+def test_fetch_brave_disabled_no_exception(_mock_enabled) -> None:
+    with patch("football_agent.services.enrichment_config.config.OPENCLAW_BRIDGE_BASE_URL", None):
+        with patch("football_agent.services.enrichment_config.config.OPENCLAW_BASE_URL", None):
+            with patch("football_agent.services.enrichment_config.config.OPENCLAW_CONTEXT_BASE_URL", None):
+                with patch("football_agent.services.enrichment_config.config.ODDS_SERVICE_URL", None):
+                    result = fetch_enrichment_for_facts(_facts())
+
+    assert result.news is None
+    assert "enrichment_not_configured" in result.warnings

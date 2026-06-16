@@ -1,0 +1,332 @@
+{
+  "batch": {
+    "pipeline": "run_level_batch_persist",
+    "fixtures_dir": "C:\\Users\\p7758\\PycharmProjects\\RobinHoodForecast\\football_agent\\tests\\data",
+    "items_requested": 4,
+    "runs_persisted": 4,
+    "match_results_saved": 4,
+    "skipped": 0,
+    "runs": [
+      {
+        "run_id": "96e27612-2dee-49df-8325-f4a7b1164af0",
+        "flashscore_stem": "flashscore_sample_league_match",
+        "match_date": "2025-11-29",
+        "home_team": "AC Milan",
+        "away_team": "Juventus",
+        "run_status": "scored"
+      },
+      {
+        "run_id": "abd0f60d-649d-4c14-8e68-0d11ba005b37",
+        "flashscore_stem": "flashscore_botola_sample_match",
+        "match_date": "2026-06-09",
+        "home_team": "Kawkab Marrakech",
+        "away_team": "Raja Casablanca",
+        "run_status": "scored"
+      },
+      {
+        "run_id": "c1c5fd1e-d338-4767-ab62-30261162f0bc",
+        "flashscore_stem": "flashscore_botola_sample_match_2",
+        "match_date": "2026-06-09",
+        "home_team": "COD Meknes",
+        "away_team": "Yacoub El Mansour",
+        "run_status": "scored"
+      },
+      {
+        "run_id": "c0f04c1f-ccff-4389-a52d-4a7c4159fe58",
+        "flashscore_stem": "flashscore_botola_sample_match_3",
+        "match_date": "2026-06-09",
+        "home_team": "FAR Rabat",
+        "away_team": "Maghreb Fez",
+        "run_status": "scored"
+      }
+    ],
+    "errors": []
+  },
+  "evaluation": {
+    "counts": {
+      "scored_runs_total": 4,
+      "evaluable_runs_total": 4,
+      "settled_runs_total": 4,
+      "skipped_identity_runs_total": 0,
+      "join_exact_count": 4,
+      "join_normalized_count": 0,
+      "join_unresolved_count": 0,
+      "scored_runs": 4,
+      "settled_runs": 4,
+      "best_market_present": 4,
+      "best_market_book_odds_present": 4,
+      "best_market_settlement_compatible": 4,
+      "roi_subset": 4
+    },
+    "metrics": {
+      "settled_coverage": 1.0,
+      "evaluable_coverage": 1.0,
+      "odds_coverage": 1.0,
+      "best_market_hit_rate": 1.0,
+      "roi_total_profit": 2.87,
+      "roi_mean_profit": 0.7175,
+      "roi": 0.7175
+    },
+    "calibration": {
+      "buckets": [
+        {
+          "range": "[0.50,0.60)",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        },
+        {
+          "range": "[0.60,0.70)",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        },
+        {
+          "range": "[0.70,0.80)",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        },
+        {
+          "range": "[0.80,0.90)",
+          "count": 4,
+          "predicted_avg": 0.8217,
+          "wins": 4,
+          "actual_winrate": 1.0
+        },
+        {
+          "range": "[0.90,1.01]",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        }
+      ]
+    },
+    "slices": {
+      "meta": {
+        "evaluable_runs_total": 4,
+        "scored_runs_total": 4,
+        "runs_with_report": 4,
+        "runs_without_report": 0
+      },
+      "missing_blocks": {
+        "by_signature": {
+          "openclaw_context": 3,
+          "(none)": 1
+        },
+        "by_block": {
+          "openclaw_context": 3
+        }
+      },
+      "openclaw_link_strategy": {
+        "unlinked": 3,
+        "by_teams_and_date": 1
+      },
+      "odds_link_strategy": {
+        "by_match_id": 3,
+        "provided_without_link": 1
+      },
+      "warnings": {
+        "runs_with_any_warning": 4,
+        "runs_without_warnings": 0,
+        "by_kind": {
+          "merge_warnings": 4,
+          "builder_warnings": 0,
+          "scoring_warnings": 4
+        }
+      },
+      "competition_code": {
+        "FS_BOTOLA_PRO": 3,
+        "FS_SERIE_A": 1
+      },
+      "competition_name": {
+        "Botola Pro": 3,
+        "Serie A": 1
+      }
+    },
+    "filters": {
+      "date_from": null,
+      "date_to": null,
+      "match_key": null,
+      "competition_code": null,
+      "limit": 1000
+    },
+    "data_notes": {
+      "no_future_leakage": true,
+      "settlement_identity_contract": "match_date:YYYY-MM-DD UTC; home_team; away_team → match_results; exact primary, normalized fallback, ambiguous unresolved",
+      "source_tables": [
+        "analysis_runs_v2",
+        "analysis_predictions_v2",
+        "analysis_build_reports_v2",
+        "analysis_snapshots_v2",
+        "match_results"
+      ]
+    }
+  },
+  "per_competition": [
+    {
+      "competition_code": "FS_BOTOLA_PRO",
+      "competition_name": "Botola Pro",
+      "runs_total": 3,
+      "slice_code_count": 3,
+      "slice_name_count": 3
+    },
+    {
+      "competition_code": "FS_SERIE_A",
+      "competition_name": "Serie A",
+      "runs_total": 1,
+      "slice_code_count": 1,
+      "slice_name_count": 1
+    }
+  ],
+  "per_market": [
+    {
+      "market_key": "AWAY_NOT_LOSE",
+      "market": "X2",
+      "settled_bets": 4,
+      "hit_rate": 0.75,
+      "avg_probability": 0.8117,
+      "roi_subset_n": 4,
+      "roi_mean": 0.23
+    },
+    {
+      "market_key": "AWAY_TEAM_TO_SCORE",
+      "market": "Away scores",
+      "settled_bets": 4,
+      "hit_rate": 0.75,
+      "avg_probability": 0.7224,
+      "roi_subset_n": 4,
+      "roi_mean": -0.03
+    },
+    {
+      "market_key": "AWAY_WIN",
+      "market": "P2",
+      "settled_bets": 4,
+      "hit_rate": 0.25,
+      "avg_probability": 0.1481,
+      "roi_subset_n": 4,
+      "roi_mean": -0.275
+    },
+    {
+      "market_key": "BTTS_YES",
+      "market": "BTTS Yes",
+      "settled_bets": 4,
+      "hit_rate": 0.75,
+      "avg_probability": 0.7425,
+      "roi_subset_n": 4,
+      "roi_mean": 0.3375
+    },
+    {
+      "market_key": "HOME_NOT_LOSE",
+      "market": "1X",
+      "settled_bets": 4,
+      "hit_rate": 0.75,
+      "avg_probability": 0.8519,
+      "roi_subset_n": 4,
+      "roi_mean": 0.14
+    },
+    {
+      "market_key": "HOME_TEAM_TO_SCORE",
+      "market": "Home scores",
+      "settled_bets": 4,
+      "hit_rate": 0.75,
+      "avg_probability": 0.7224,
+      "roi_subset_n": 4,
+      "roi_mean": 0.05
+    },
+    {
+      "market_key": "HOME_WIN",
+      "market": "P1",
+      "settled_bets": 4,
+      "hit_rate": 0.25,
+      "avg_probability": 0.1883,
+      "roi_subset_n": 4,
+      "roi_mean": 0.1875
+    },
+    {
+      "market_key": "OVER_1_5",
+      "market": "O1.5",
+      "settled_bets": 4,
+      "hit_rate": 0.75,
+      "avg_probability": 0.7825,
+      "roi_subset_n": 4,
+      "roi_mean": -0.0625
+    }
+  ],
+  "run_details": [
+    {
+      "run_id": "96e27612-2dee-49df-8325-f4a7b1164af0",
+      "competition_code": "FS_SERIE_A",
+      "competition_name": "Serie A",
+      "match": "AC Milan vs Juventus",
+      "result": "1-1",
+      "best_market": "AWAY_NOT_LOSE",
+      "best_probability": 0.8117,
+      "best_book_odds": 1.62,
+      "best_market_won": true,
+      "missing_blocks": [],
+      "openclaw_link": "by_teams_and_date",
+      "odds_link": "provided_without_link",
+      "merge_warnings_count": 1,
+      "scoring_warnings_count": 2
+    },
+    {
+      "run_id": "abd0f60d-649d-4c14-8e68-0d11ba005b37",
+      "competition_code": "FS_BOTOLA_PRO",
+      "competition_name": "Botola Pro",
+      "match": "Kawkab Marrakech vs Raja Casablanca",
+      "result": "2-1",
+      "best_market": "HOME_NOT_LOSE",
+      "best_probability": 0.8519,
+      "best_book_odds": 1.95,
+      "best_market_won": true,
+      "missing_blocks": [
+        "openclaw_context"
+      ],
+      "openclaw_link": "unlinked",
+      "odds_link": "by_match_id",
+      "merge_warnings_count": 1,
+      "scoring_warnings_count": 2
+    },
+    {
+      "run_id": "c1c5fd1e-d338-4767-ab62-30261162f0bc",
+      "competition_code": "FS_BOTOLA_PRO",
+      "competition_name": "Botola Pro",
+      "match": "COD Meknes vs Yacoub El Mansour",
+      "result": "0-0",
+      "best_market": "AWAY_NOT_LOSE",
+      "best_probability": 0.8117,
+      "best_book_odds": 1.75,
+      "best_market_won": true,
+      "missing_blocks": [
+        "openclaw_context"
+      ],
+      "openclaw_link": "unlinked",
+      "odds_link": "by_match_id",
+      "merge_warnings_count": 1,
+      "scoring_warnings_count": 2
+    },
+    {
+      "run_id": "c0f04c1f-ccff-4389-a52d-4a7c4159fe58",
+      "competition_code": "FS_BOTOLA_PRO",
+      "competition_name": "Botola Pro",
+      "match": "FAR Rabat vs Maghreb Fez",
+      "result": "1-2",
+      "best_market": "AWAY_NOT_LOSE",
+      "best_probability": 0.8117,
+      "best_book_odds": 1.55,
+      "best_market_won": true,
+      "missing_blocks": [
+        "openclaw_context"
+      ],
+      "openclaw_link": "unlinked",
+      "odds_link": "by_match_id",
+      "merge_warnings_count": 1,
+      "scoring_warnings_count": 2
+    }
+  ]
+}

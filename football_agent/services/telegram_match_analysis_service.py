@@ -10,7 +10,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from football_agent.bot.clarification_flow import merge_clarification_text
+from football_agent.bot.clarification_messages import format_clarification_reply
+from football_agent.bot.clarification_state import ClarificationStateStore, should_reset_pending_on_message
 from football_agent.bot.request_parser import (
+    ClarificationReason,
     MatchRequestKind,
     ParsedMatchRequest,
     default_match_date,
@@ -18,6 +22,7 @@ from football_agent.bot.request_parser import (
 )
 from football_agent.output.telegram_match_output import format_telegram_match_reply
 from football_agent.services.live_flashscore_pipeline import LiveFlashscorePipeline, LivePipelineResult
+from football_agent.services.telegram_league_analysis_service import TelegramLeagueAnalysisService
 
 logger = logging.getLogger(__name__)
 
@@ -36,35 +41,64 @@ class TelegramAnalysisResponse:
     stage_failed: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
     sources: Dict[str, str] = field(default_factory=dict)
+    needs_clarification: bool = False
 
 
 class TelegramMatchAnalysisService:
     """
-    Orchestrates single-match analysis for bot users.
-
-    Supported inputs:
-    - Flashscore match URL (primary)
-    - ``Home - Away`` with optional date (Flashscore date listing + team resolver)
+    Orchestrates match/league analysis for bot users with clarification flow.
     """
 
-    def __init__(self, pipeline: Optional[LiveFlashscorePipeline] = None) -> None:
+    def __init__(
+        self,
+        pipeline: Optional[LiveFlashscorePipeline] = None,
+        league_service: Optional[TelegramLeagueAnalysisService] = None,
+        clarification_store: Optional[ClarificationStateStore] = None,
+    ) -> None:
         self._pipeline = pipeline or LiveFlashscorePipeline()
+        self._league_service = league_service or TelegramLeagueAnalysisService(pipeline=self._pipeline)
+        self._clarification_store = clarification_store or ClarificationStateStore()
 
-    def analyze_text(self, user_text: str) -> TelegramAnalysisResponse:
-        request = parse_match_request(user_text)
+    def analyze_text(self, user_text: str, *, chat_id: Optional[int] = None) -> TelegramAnalysisResponse:
+        if chat_id is not None and should_reset_pending_on_message(user_text):
+            self._clarification_store.clear(chat_id)
+
+        effective_text = user_text
+        pending = None
+        if chat_id is not None:
+            pending = self._clarification_store.get_valid(chat_id)
+            if pending is not None:
+                effective_text = merge_clarification_text(pending, user_text)
+                logger.info(
+                    "clarification_merge chat_id=%s pending_reason=%s merged=%r",
+                    chat_id,
+                    pending.reason.value,
+                    effective_text[:200],
+                )
+
+        request = parse_match_request(effective_text)
         logger.info(
-            "Match analysis request kind=%s text=%r",
+            "Match analysis request kind=%s text=%r effective=%r",
             request.kind.value,
-            request.raw_text[:200],
+            user_text[:200],
+            effective_text[:200],
         )
 
-        if request.kind == MatchRequestKind.UNSUPPORTED:
-            return TelegramAnalysisResponse(
-                reply_text=_unsupported_help_text(),
-                success=False,
-                request_kind=request.kind.value,
-                stage_failed="unsupported_input",
-            )
+        if request.kind == MatchRequestKind.NEEDS_CLARIFICATION:
+            return self._clarification_response(request, chat_id=chat_id)
+
+        if chat_id is not None:
+            self._clarification_store.clear(chat_id)
+
+        if request.kind == MatchRequestKind.LEAGUE_QUERY:
+            resp = self._league_service.analyze_league_request(request)
+            if resp.needs_clarification and chat_id is not None:
+                self._clarification_store.set_from_request(
+                    chat_id,
+                    reason=ClarificationReason.AMBIGUOUS_LEAGUE,
+                    raw_text=user_text,
+                )
+            return resp
 
         if request.kind == MatchRequestKind.FLASHSCORE_URL:
             result = self._pipeline.analyze_flashscore_url(request.flashscore_url or "")
@@ -77,6 +111,34 @@ class TelegramMatchAnalysisService:
             )
 
         return self._to_response(request, result)
+
+    def _clarification_response(
+        self,
+        request: ParsedMatchRequest,
+        *,
+        chat_id: Optional[int],
+    ) -> TelegramAnalysisResponse:
+        reason = request.clarification_reason
+        if reason is None:
+            reply = format_clarification_reply(ClarificationReason.MISSING_MATCH_TEAMS)
+        else:
+            reply = format_clarification_reply(reason)
+
+        if chat_id is not None and reason is not None:
+            self._clarification_store.set_from_request(
+                chat_id,
+                reason=reason,
+                raw_text=request.raw_text,
+                partial_home=request.partial_home,
+            )
+
+        return TelegramAnalysisResponse(
+            reply_text=reply,
+            success=False,
+            request_kind=MatchRequestKind.NEEDS_CLARIFICATION.value,
+            stage_failed=reason.value if reason else "needs_clarification",
+            needs_clarification=True,
+        )
 
     def _to_response(
         self,
@@ -123,16 +185,3 @@ class TelegramMatchAnalysisService:
             warnings=list(result.warnings),
             sources=dict(result.sources),
         )
-
-
-def _unsupported_help_text() -> str:
-    return (
-        "Не понял запрос.\n\n"
-        "Поддерживается:\n"
-        "• ссылка на матч Flashscore\n"
-        "• команды через «—» или «vs»\n\n"
-        "Примеры:\n"
-        "https://www.flashscore.com/match/football/.../?mid=...\n"
-        "FAR Rabat — Maghreb Fez\n"
-        "Real Madrid vs Barcelona 2026-06-15"
-    )

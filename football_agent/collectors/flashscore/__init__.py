@@ -1,0 +1,1 @@
+"""Flashscore block collectors."""

@@ -1,0 +1,167 @@
+﻿{
+  "pipeline": "league_eval_pool_report",
+  "pool": [
+    "kazakhstan_premier",
+    "estonia_meistriliiga",
+    "estonia_premium_liiga",
+    "latvia_virsliga",
+    "brazil_serie_b"
+  ],
+  "filters": {
+    "date_from": null,
+    "date_to": null,
+    "limit": 5000
+  },
+  "counts": {
+    "persisted_runs_total_db": 8,
+    "pool_runs": 4,
+    "league_scored_runs": 4,
+    "parked_or_analysis_only_in_pool": 0,
+    "settled_league_scored_runs": 0,
+    "runs_with_odds": 3,
+    "low_confidence_runs": 4
+  },
+  "parked_share_in_pool": 0.0,
+  "confidence_distribution": {
+    "lt_0_45": 4,
+    "0_45_0_60": 0,
+    "0_60_0_75": 0,
+    "gte_0_75": 0
+  },
+  "best_market_distribution": {
+    "HOME_NOT_LOSE": 4
+  },
+  "evaluation_subset": {
+    "counts": {
+      "scored_runs_total": 8,
+      "evaluable_runs_total": 8,
+      "settled_runs_total": 2,
+      "skipped_identity_runs_total": 0,
+      "join_exact_count": 2,
+      "join_normalized_count": 0,
+      "join_unresolved_count": 6,
+      "scored_runs": 8,
+      "settled_runs": 2,
+      "best_market_present": 2,
+      "best_market_book_odds_present": 6,
+      "best_market_settlement_compatible": 2,
+      "roi_subset": 2
+    },
+    "metrics": {
+      "settled_coverage": 0.25,
+      "evaluable_coverage": 1.0,
+      "odds_coverage": 0.75,
+      "best_market_hit_rate": 0.0,
+      "roi_total_profit": -2.0,
+      "roi_mean_profit": -1.0,
+      "roi": -1.0
+    },
+    "calibration": {
+      "buckets": [
+        {
+          "range": "[0.50,0.60)",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        },
+        {
+          "range": "[0.60,0.70)",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        },
+        {
+          "range": "[0.70,0.80)",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        },
+        {
+          "range": "[0.80,0.90)",
+          "count": 2,
+          "predicted_avg": 0.8117,
+          "wins": 0,
+          "actual_winrate": 0.0
+        },
+        {
+          "range": "[0.90,1.01]",
+          "count": 0,
+          "predicted_avg": null,
+          "wins": 0,
+          "actual_winrate": null
+        }
+      ]
+    },
+    "slices": {
+      "meta": {
+        "evaluable_runs_total": 8,
+        "scored_runs_total": 8,
+        "runs_with_report": 8,
+        "runs_without_report": 0
+      },
+      "missing_blocks": {
+        "by_signature": {
+          "news_context+openclaw_context": 1,
+          "news_context+odds_context+openclaw_context": 1,
+          "(none)": 5,
+          "odds_context+openclaw_context": 1
+        },
+        "by_block": {
+          "news_context": 2,
+          "openclaw_context": 3,
+          "odds_context": 2
+        }
+      },
+      "openclaw_link_strategy": {
+        "unlinked": 3,
+        "by_match_id": 3,
+        "by_teams_and_date": 2
+      },
+      "odds_link_strategy": {
+        "by_match_id": 4,
+        "unlinked": 2,
+        "provided_without_link": 2
+      },
+      "warnings": {
+        "runs_with_any_warning": 8,
+        "runs_without_warnings": 0,
+        "by_kind": {
+          "merge_warnings": 5,
+          "builder_warnings": 6,
+          "scoring_warnings": 8
+        }
+      },
+      "competition_code": {
+        "FS_BOTOLA_PRO": 2,
+        "FS_SERIE_B": 4,
+        "FS_SERIE_A": 2
+      },
+      "competition_name": {
+        "Botola Pro": 2,
+        "Serie B": 4,
+        "Serie A": 2
+      }
+    },
+    "filters": {
+      "date_from": null,
+      "date_to": null,
+      "match_key": null,
+      "competition_code": null,
+      "limit": 5000
+    },
+    "data_notes": {
+      "no_future_leakage": true,
+      "settlement_identity_contract": "match_date:YYYY-MM-DD UTC; home_team; away_team тЖТ match_results; exact primary, normalized fallback, ambiguous unresolved",
+      "source_tables": [
+        "analysis_runs_v2",
+        "analysis_predictions_v2",
+        "analysis_build_reports_v2",
+        "analysis_snapshots_v2",
+        "match_results"
+      ]
+    }
+  }
+}

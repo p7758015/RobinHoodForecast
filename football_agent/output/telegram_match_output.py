@@ -148,6 +148,9 @@ def format_telegram_match_reply(result: LivePipelineResult) -> str:
     if scored is None:
         return result.user_message or "Анализ недоступен."
 
+    if scored.scoring_skipped or scored.prediction.analysis_mode == "analysis_only":
+        return _format_parked_telegram_reply(result)
+
     snap = scored.snapshot
     pred = scored.prediction
     meta = snap.match_meta
@@ -223,6 +226,78 @@ def format_telegram_match_reply(result: LivePipelineResult) -> str:
     if guard and guard.guardrail_applied and guard.telegram_hint and not warning:
         lines.append("")
         lines.append(f"ℹ️ {guard.telegram_hint}")
+
+    return "\n".join(lines)
+
+
+def _format_parked_telegram_reply(result: LivePipelineResult) -> str:
+    scored = result.scored_run
+    assert scored is not None
+    snap = scored.snapshot
+    pred = scored.prediction
+    meta = snap.match_meta
+    parked = pred.parked_context
+
+    home = meta.home_team.short_name or meta.home_team.name
+    away = meta.away_team.short_name or meta.away_team.name
+    comp = meta.competition_name or meta.competition_code or "—"
+    comp_suffix = _competition_context_suffix(result)
+
+    lines = [
+        f"⚽ {home} — {away}",
+        f"🏆 {comp}{comp_suffix}",
+        "📋 Режим: analysis-only (league scoring не применяется)",
+    ]
+
+    if parked is not None:
+        label = COMPETITION_CONTEXT_LABELS_RU.get(
+            result.competition_classification.category,
+            parked.category,
+        ) if result.competition_classification else parked.category
+        lines.append(f"🏷 Тип: {label} · {parked.reason}")
+
+    sources_line = format_data_sources_line(
+        result.sources,
+        odds_source=result.odds_source,
+        enrichment_backend=result.enrichment_backend,
+    )
+    if sources_line:
+        lines.append(sources_line)
+
+    if meta.match_date_utc:
+        lines.append(f"🕐 {meta.match_date_utc}")
+
+    if pred.prediction_summary:
+        lines.append("")
+        lines.append(pred.prediction_summary)
+
+    conf = pred.overall_confidence_score
+    lines.append(f"🎯 Уверенность данных: {conf:.0%}")
+
+    if parked and parked.book_odds_available:
+        odds = snap.odds
+        ref_parts: list[str] = []
+        if odds.home_win is not None:
+            ref_parts.append(f"1={odds.home_win.odds:.2f}")
+        if odds.away_win is not None:
+            ref_parts.append(f"2={odds.away_win.odds:.2f}")
+        if ref_parts:
+            lines.append("📎 Линия (справочно, не прогноз): " + ", ".join(ref_parts))
+
+    factors = _merge_key_factors(result)
+    if factors:
+        lines.append("")
+        lines.append("Контекст:")
+        for factor in factors:
+            lines.append(f"• {factor}")
+
+    warning = _data_warning_line(result)
+    if warning:
+        lines.append("")
+        lines.append(f"⚠️ {warning}")
+
+    lines.append("")
+    lines.append("ℹ️ Кодовый прогноз для этого типа турнира пока не формируется.")
 
     return "\n".join(lines)
 

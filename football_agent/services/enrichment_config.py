@@ -1,11 +1,12 @@
 """
 Resolve live enrichment URLs and routing for OpenClaw-first architecture.
 
-Priority for OpenClaw base URL:
+Priority for enrichment HTTP base URL:
 
 1. Explicit override (pipeline / CLI)
-2. ``OPENCLAW_BASE_URL`` (unified enrichment backend — target v1)
-3. ``OPENCLAW_CONTEXT_BASE_URL`` (legacy alias, backward compatible)
+2. ``OPENCLAW_BRIDGE_BASE_URL`` (stable JSON bridge — preferred when set)
+3. ``OPENCLAW_BASE_URL`` (legacy direct OpenClaw gateway)
+4. ``OPENCLAW_CONTEXT_BASE_URL`` (legacy alias)
 
 Odds URL resolution:
 
@@ -31,15 +32,36 @@ from football_agent.services.enrichment_contract import (
 )
 
 
+def resolve_openclaw_bridge_base_url() -> Optional[str]:
+    """Configured OpenClaw bridge base URL (if any)."""
+    return config.OPENCLAW_BRIDGE_BASE_URL
+
+
 def resolve_openclaw_base_url(override: Optional[str] = None) -> Optional[str]:
-    """Effective OpenClaw enrichment base (context + optional odds)."""
+    """Effective enrichment HTTP base (bridge preferred, then legacy gateway)."""
     if override is not None:
         url = override.strip().rstrip("/")
         return url or None
+    if config.OPENCLAW_BRIDGE_BASE_URL:
+        return config.OPENCLAW_BRIDGE_BASE_URL
     for candidate in (config.OPENCLAW_BASE_URL, config.OPENCLAW_CONTEXT_BASE_URL):
         if candidate:
             return candidate
     return None
+
+
+def resolve_legacy_openclaw_gateway_url() -> Optional[str]:
+    """Direct OpenClaw gateway URL (without bridge); for diagnostics only."""
+    for candidate in (config.OPENCLAW_GATEWAY_URL, config.OPENCLAW_BASE_URL, config.OPENCLAW_CONTEXT_BASE_URL):
+        if candidate:
+            return candidate
+    return None
+
+
+def enrichment_uses_bridge(*, base_url: Optional[str] = None) -> bool:
+    effective = resolve_openclaw_base_url(base_url) if base_url is None else base_url
+    bridge = config.OPENCLAW_BRIDGE_BASE_URL
+    return bool(bridge and effective and effective.rstrip("/") == bridge.rstrip("/"))
 
 
 def resolve_enrichment_mode(*, mode_override: Optional[str] = None) -> str:

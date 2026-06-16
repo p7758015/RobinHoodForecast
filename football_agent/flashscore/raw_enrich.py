@@ -111,6 +111,17 @@ def squad_has_signal(data: Optional[Dict[str, Any]]) -> bool:
     lineups = data.get("predicted_lineups") or data.get("confirmed_lineups") or {}
     if isinstance(lineups, dict) and any(lineups.get(s) for s in ("home", "away")):
         return True
+    missing = data.get("missing_players_raw") or {}
+    if isinstance(missing, dict) and any(missing.get(s) for s in ("home", "away")):
+        return True
+    status = data.get("player_status_raw") or {}
+    if isinstance(status, dict) and any(
+        isinstance(v, dict) and v for v in status.values()
+    ):
+        return True
+    bench = data.get("bench") or {}
+    if isinstance(bench, dict) and any(bench.get(s) for s in ("home", "away")):
+        return True
     for coach_key in ("coach_name_home", "coach_name_away"):
         name = str(data.get(coach_key) or "").strip()
         if name and name.lower() != "unknown":

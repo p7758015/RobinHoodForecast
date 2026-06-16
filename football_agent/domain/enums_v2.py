@@ -13,6 +13,7 @@ class TournamentType(str, Enum):
     INTERNATIONAL_CLUB = "INTERNATIONAL_CLUB"
     INTERNATIONAL_NATIONAL = "INTERNATIONAL_NATIONAL"
     FRIENDLY = "FRIENDLY"
+    UNKNOWN = "UNKNOWN"
 
 
 class SeasonPhase(str, Enum):

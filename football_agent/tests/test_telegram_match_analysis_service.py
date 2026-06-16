@@ -51,8 +51,9 @@ def test_unsupported_input_fallback() -> None:
     service = TelegramMatchAnalysisService(pipeline=MagicMock())
     resp = service.analyze_text("random text without teams")
     assert resp.success is False
-    assert resp.stage_failed == "unsupported_input"
-    assert "Flashscore" in resp.reply_text
+    assert resp.needs_clarification is True
+    assert resp.request_kind == "needs_clarification"
+    assert "Примеры" in resp.reply_text or "примеры" in resp.reply_text.lower()
 
 
 def test_team_query_failure_graceful() -> None:
