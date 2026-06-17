@@ -1,0 +1,25 @@
+{
+  "wave_name": "june18_21_first_batch",
+  "label": "First eval wave 18–21 Jun 2026 (41 matches)",
+  "date_from": "2026-06-18",
+  "date_to": "2026-06-21",
+  "expected_matches": 41,
+  "league_keys": [
+    "finland_veikkausliiga",
+    "morocco_botola",
+    "belarus_premier",
+    "brazil_serie_b",
+    "chile_primera",
+    "estonia_meistriliiga",
+    "estonia_premium_liiga",
+    "kazakhstan_premier",
+    "latvia_virsliga",
+    "lithuania_a_lyga"
+  ],
+  "notes": {
+    "2026-06-18": "Finland (1), Morocco (4)",
+    "2026-06-19": "Belarus (1), Brazil Serie B (1), Chile (1)",
+    "2026-06-20": "Belarus (4), Brazil Serie B (1), Estonia (2), Kazakhstan (4), Latvia (1), Lithuania (3)",
+    "2026-06-21": "Belarus (3), Brazil Serie B (5), Estonia (2), Kazakhstan (4), Latvia (3), Lithuania (1)"
+  }
+}

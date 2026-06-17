@@ -65,7 +65,50 @@ WAVE1_LEAGUE_POOL: Tuple[LeaguePoolEntry, ...] = (
     ),
 )
 
+# Operational wave extensions (eval waves beyond wave-1 default pool).
+WAVE_EXTENSION_POOL: Tuple[LeaguePoolEntry, ...] = (
+    LeaguePoolEntry(
+        key="finland_veikkausliiga",
+        display_name="Finland Veikkausliiga",
+        countries=("finland",),
+        name_patterns=("veikkausliiga", "finland"),
+        registry_code="FS_FINLAND_VEIKKAUSLIIGA",
+    ),
+    LeaguePoolEntry(
+        key="morocco_botola",
+        display_name="Morocco Botola Pro",
+        countries=("morocco",),
+        name_patterns=("botola",),
+        registry_code="FS_BOTOLA_PRO",
+    ),
+    LeaguePoolEntry(
+        key="belarus_premier",
+        display_name="Belarus Premier League",
+        countries=("belarus",),
+        name_patterns=("belarus", "vysshaya", "vysheyshaya", "premier league"),
+        registry_code="FS_BELARUS_PREMIER",
+    ),
+    LeaguePoolEntry(
+        key="chile_primera",
+        display_name="Chile Primera Division",
+        countries=("chile",),
+        name_patterns=("primera", "chile"),
+        registry_code="FS_CHILE_PRIMERA",
+    ),
+    LeaguePoolEntry(
+        key="lithuania_a_lyga",
+        display_name="Lithuania A Lyga",
+        countries=("lithuania",),
+        name_patterns=("a lyga", "alyga", "lithuania"),
+        registry_code="FS_LITHUANIA_A_LYGA",
+    ),
+)
+
 WAVE1_POOL_KEYS: Tuple[str, ...] = tuple(e.key for e in WAVE1_LEAGUE_POOL)
+
+
+def all_pool_entries() -> Tuple[LeaguePoolEntry, ...]:
+    return WAVE1_LEAGUE_POOL + WAVE_EXTENSION_POOL
 
 
 def resolve_pool_entry(
@@ -77,7 +120,7 @@ def resolve_pool_entry(
     if not comp:
         return None
     country = _norm(competition_country)
-    for entry in WAVE1_LEAGUE_POOL:
+    for entry in all_pool_entries():
         name_ok = any(pat in comp for pat in entry.name_patterns)
         if not name_ok:
             continue
@@ -93,7 +136,7 @@ def filter_pool_keys(keys: Optional[Sequence[str]]) -> Tuple[LeaguePoolEntry, ..
     if not keys:
         return WAVE1_LEAGUE_POOL
     wanted = {_norm(k) for k in keys}
-    selected = tuple(e for e in WAVE1_LEAGUE_POOL if e.key in wanted)
+    selected = tuple(e for e in all_pool_entries() if e.key in wanted)
     if not selected:
-        raise ValueError(f"No wave-1 pool entries for keys: {list(keys)}")
+        raise ValueError(f"No pool entries for keys: {list(keys)}")
     return selected

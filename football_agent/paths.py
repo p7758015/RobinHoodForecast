@@ -25,6 +25,7 @@ CACHE_DIR = PACKAGE_ROOT / "cache"
 
 DEFAULT_DB_FILENAME = "football_agent.db"
 DEFAULT_DB_PATH = DATA_DIR / DEFAULT_DB_FILENAME
+EVAL_WAVE_REPORTS_DIR = DATA_DIR / "eval_wave_reports"
 
 
 def ensure_runtime_dirs() -> None:
@@ -34,3 +35,4 @@ def ensure_runtime_dirs() -> None:
     ODDS_REFRESH_DIR.mkdir(parents=True, exist_ok=True)
     NEWS_REFRESH_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    EVAL_WAVE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
