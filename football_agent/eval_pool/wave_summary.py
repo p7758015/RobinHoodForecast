@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from football_agent.eval_pool.wave_manifest import EvalWaveManifest
+from football_agent.eval_pool.wave_predictions import collect_wave_predictions, format_predictions_markdown, predictions_to_json
 
 
 def build_wave_cli_summary(
@@ -247,6 +248,16 @@ def write_wave_artifacts(
     json_path = output_dir / f"{base}.json"
     md_path = output_dir / f"{base}.md"
 
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_payload = {k: v for k, v in payload.items() if k != "prediction_views"}
+    json_path.write_text(json.dumps(json_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path.write_text(build_wave_markdown(manifest, payload), encoding="utf-8")
-    return {"json": str(json_path), "markdown": str(md_path)}
+    paths: Dict[str, str] = {"json": str(json_path), "markdown": str(md_path)}
+    prediction_views = payload.get("prediction_views")
+    if prediction_views:
+        pred_md_path = output_dir / f"{base}_predictions.md"
+        pred_md_path.write_text(
+            format_predictions_markdown(prediction_views, manifest=manifest),
+            encoding="utf-8",
+        )
+        paths["predictions_markdown"] = str(pred_md_path)
+    return paths

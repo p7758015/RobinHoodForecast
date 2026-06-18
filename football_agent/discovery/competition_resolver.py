@@ -14,7 +14,7 @@ from football_agent.discovery.models import (
     CompetitionResolveResult,
     ResolvedCompetition,
 )
-from football_agent.discovery.registry_lookup import lookup_registry_candidates
+from football_agent.discovery.registry_lookup import lookup_registry_by_pool_entry, lookup_registry_candidates
 from football_agent.discovery.scraper_client import FlashscoreDiscoveryClient
 from football_agent.flashscore.models import FlashscoreMeta
 from football_agent.services.competition_classifier import classify_competition_meta
@@ -139,6 +139,30 @@ class CompetitionResolverService:
             else bool(config.DISCOVERY_BRAVE_NORMALIZE)
         )
 
+    def resolve_competition_for_pool_entry(
+        self,
+        entry: "LeaguePoolEntry",
+    ) -> CompetitionResolveResult:
+        """Resolve eval-pool entry via registry Flashscore URL (no free-text ambiguity)."""
+        from football_agent.eval_pool.scope import LeaguePoolEntry as _Entry
+
+        if not isinstance(entry, _Entry):
+            raise TypeError("entry must be LeaguePoolEntry")
+        cand = lookup_registry_by_pool_entry(entry)
+        if cand is None or not cand.url:
+            return CompetitionResolveResult(
+                query=entry.key,
+                warnings=["pool_entry_not_mapped"],
+            )
+        return CompetitionResolveResult(
+            query=entry.key,
+            candidates=[cand],
+            resolved=ResolvedCompetition(candidate=cand, normalized_query=entry.key),
+            ambiguous=False,
+            normalized_query=entry.key,
+            sources_tried=["pool_registry"],
+        )
+
     def resolve_competition(
         self,
         query_text: str,
@@ -161,6 +185,19 @@ class CompetitionResolverService:
         sources_tried.append("registry")
         reg = lookup_registry_candidates(query)
         candidates.extend(reg)
+
+        # Prefer a single registry candidate with an explicit Flashscore URL.
+        reg_with_url = [c for c in reg if c.url]
+        if len(reg_with_url) == 1:
+            only = reg_with_url[0]
+            return CompetitionResolveResult(
+                query=query,
+                candidates=_dedupe_candidates(candidates),
+                resolved=ResolvedCompetition(candidate=only, normalized_query=query),
+                ambiguous=False,
+                normalized_query=query,
+                sources_tried=sources_tried,
+            )
 
         # 2) Static alias → synthetic candidate (scraper will confirm URL)
         alias = lookup_static_alias(query)
@@ -187,8 +224,7 @@ class CompetitionResolverService:
                     )
                 )
 
-        # If registry gave a single high-confidence hit, return early
-        reg_high = [c for c in reg if c.confidence == "high"]
+        reg_high = [c for c in reg if c.confidence == "high" and c.url]
         if len(reg_high) == 1 and not alias:
             only = reg_high[0]
             return CompetitionResolveResult(

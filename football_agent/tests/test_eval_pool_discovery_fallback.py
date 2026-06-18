@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from football_agent.eval_pool.accumulate import accumulate_league_pool
-from football_agent.eval_pool.scope import WAVE1_LEAGUE_POOL
+from football_agent.eval_pool.fixture_sources import FixtureFetchResult, FixtureFetchStats
 from football_agent.services.live_flashscore_pipeline import LivePipelineResult
 from football_agent.tests.test_competition_discovery import _mock_search
 
@@ -33,11 +33,15 @@ def test_discovery_fallback_used_when_list_empty() -> None:
         "_discovery_source": True,
     }
 
-    def _entry_fetch(entry, date_str, raw_list, *, use_discovery_fallback, resolver=None, fixture_svc=None):
+    def _entry_fetch(entry, date_str, raw_list, *, use_discovery_fallback, resolver=None, fixture_svc=None, **kwargs):
         from_list = [r for r in raw_list if False]
         if use_discovery_fallback and entry.key == "latvia_virsliga":
-            return [discovered_raw], ["discovery_fallback_used:latvia_virsliga"]
-        return from_list, []
+            return FixtureFetchResult(
+                fixtures=[discovered_raw],
+                warnings=["discovery_fallback_used:latvia_virsliga"],
+                stats=FixtureFetchStats(seen=1, in_range=1),
+            )
+        return FixtureFetchResult.empty()
 
     summary = accumulate_league_pool(
         date_from="2026-06-02",

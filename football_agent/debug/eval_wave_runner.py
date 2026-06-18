@@ -4,9 +4,11 @@ Operational eval wave runner — one entrypoint for accumulate / results / settl
 Examples::
 
   cd football_agent
+  python -m football_agent.debug.eval_wave_runner list-wave-predictions --preset june18_21_first_batch
+  python -m football_agent.debug.eval_wave_runner show-run --run-id <uuid> --db-path football_agent/data/football_agent.db
+  python -m football_agent.debug.eval_wave_runner report-wave --preset june18_21_first_batch
   python -m football_agent.debug.eval_wave_runner full-wave --preset june18_21_first_batch
   python -m football_agent.debug.eval_wave_runner accumulate-wave --preset june18_21_first_batch
-  python -m football_agent.debug.eval_wave_runner report-wave --preset june18_21_first_batch --json
 """
 
 from __future__ import annotations
@@ -17,7 +19,16 @@ import logging
 import sys
 from typing import Optional, Sequence
 
+from football_agent.eval_pool.wave_cleanup import cleanup_wave_runs
 from football_agent.eval_pool.wave_manifest import BUILTIN_PRESETS, load_wave_manifest
+from football_agent.eval_pool.wave_predictions import (
+    collect_wave_predictions,
+    format_prediction_detail,
+    format_predictions_markdown,
+    format_predictions_table,
+    get_wave_prediction_by_run_id,
+    predictions_to_json,
+)
 from football_agent.eval_pool.wave_runner import EvalWaveRunner
 from football_agent.paths import DEFAULT_DB_PATH
 
@@ -60,9 +71,10 @@ def _cmd_accumulate(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print("Accumulate wave done")
-        print(f"- fixtures in scope: {result.get('fixtures_in_scope')}")
-        print(f"- league scored: {result.get('league_full_scored')}")
-        print(f"- persisted: {result.get('persist_success')}")
+        print(f"- fixtures in scope / in range: {result.get('fixtures_in_scope')} / {result.get('fixtures_in_range')}")
+        print(f"- out of range skipped: {result.get('fixtures_out_of_range_skipped', 0)}")
+        print(f"- expected matches: {result.get('expected_matches')}")
+        print(f"- league scored / persisted: {result.get('league_full_scored')} / {result.get('persisted_runs', result.get('persist_success'))}")
         print(f"- discovery added: {result.get('discovery_fixtures_added', 0)}")
         if result.get("errors"):
             print(f"- errors: {len(result['errors'])}")
@@ -119,6 +131,54 @@ def _cmd_full(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_list_predictions(args: argparse.Namespace) -> int:
+    """List persisted predictions for a wave (read-only)."""
+    manifest = load_wave_manifest(preset=args.preset, manifest_path=args.manifest)
+    views = collect_wave_predictions(manifest, db_path=args.db_path)
+    if args.json:
+        print(json.dumps(predictions_to_json(views), ensure_ascii=False, indent=2))
+    elif args.markdown:
+        print(format_predictions_markdown(views, manifest=manifest))
+    else:
+        print(format_predictions_table(views))
+    return 0
+
+
+def _cmd_show_run(args: argparse.Namespace) -> int:
+    """Show one persisted scored run by run_id (read-only)."""
+    view = get_wave_prediction_by_run_id(args.run_id, db_path=args.db_path)
+    if view is None:
+        print(f"Run not found: {args.run_id}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(predictions_to_json([view])[0], ensure_ascii=False, indent=2))
+    else:
+        print(format_prediction_detail(view))
+    return 0
+
+
+def _cmd_cleanup(args: argparse.Namespace) -> int:
+    manifest = load_wave_manifest(preset=args.preset, manifest_path=args.manifest)
+    result = cleanup_wave_runs(
+        manifest,
+        db_path=args.db_path,
+        dry_run=not args.apply,
+        include_match_results=bool(args.include_match_results),
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        mode = "DRY RUN" if result["dry_run"] else "APPLIED"
+        print(f"Cleanup wave ({mode}): {manifest.wave_name}")
+        print(f"- runs matched: {result['runs_matched']}")
+        if not result["dry_run"]:
+            print(f"- runs deleted: {result['runs_deleted']}")
+            print(f"- predictions deleted: {result['predictions_deleted']}")
+        if args.include_match_results:
+            print(f"- match_results deleted: {result.get('match_results_deleted', 0)}")
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="eval_wave_runner",
@@ -132,6 +192,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ("settle-wave", _cmd_settle),
         ("report-wave", _cmd_report),
         ("full-wave", _cmd_full),
+        ("list-wave-predictions", _cmd_list_predictions),
+        ("cleanup-wave", _cmd_cleanup),
     ):
         p = sub.add_parser(name, help=handler.__doc__ or name)
         _add_wave_args(p)
@@ -141,10 +203,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 action="store_true",
                 help="Skip writing JSON/markdown files to data/eval_wave_reports/.",
             )
+        if name == "list-wave-predictions":
+            p.add_argument(
+                "--markdown",
+                action="store_true",
+                help="Print markdown table instead of fixed-width terminal table.",
+            )
+        if name == "cleanup-wave":
+            p.add_argument(
+                "--apply",
+                action="store_true",
+                help="Actually delete matched runs (default is dry-run preview).",
+            )
+            p.add_argument(
+                "--include-match-results",
+                action="store_true",
+                help="Also delete match_results rows for wave matches (off by default).",
+            )
         p.set_defaults(func=handler)
 
+    p_show = sub.add_parser("show-run", help=_cmd_show_run.__doc__ or "show-run")
+    p_show.add_argument("--run-id", required=True, help="analysis_runs_v2.run_id (UUID)")
+    p_show.add_argument("--db-path", default=str(DEFAULT_DB_PATH), help="SQLite DB path.")
+    p_show.add_argument("--json", action="store_true")
+    p_show.set_defaults(func=_cmd_show_run)
+
     args = parser.parse_args(list(argv) if argv is not None else None)
-    if not args.preset and not args.manifest:
+    if args.command != "show-run" and not args.preset and not args.manifest:
         print("Error: provide --preset or --manifest", file=sys.stderr)
         return 2
     return int(args.func(args))

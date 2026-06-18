@@ -120,10 +120,16 @@ class LiveFlashscorePipeline:
         self._db_path = db_path
         self._persist = persist
 
-    def analyze_flashscore_url(self, match_url: str) -> LivePipelineResult:
+    def analyze_flashscore_url(
+        self,
+        match_url: str,
+        *,
+        discovery_hints: Optional[dict] = None,
+    ) -> LivePipelineResult:
         return self._run(
             path="flashscore_url",
             match_url=match_url.strip(),
+            discovery_hints=discovery_hints,
         )
 
     def analyze_teams(
@@ -168,6 +174,7 @@ class LiveFlashscorePipeline:
         away: Optional[str],
         date_str: Optional[str],
         competition_code: Optional[str],
+        discovery_hints: Optional[dict] = None,
     ) -> tuple[
         Optional[FlashscoreMatchFacts],
         Dict[str, str],
@@ -183,7 +190,7 @@ class LiveFlashscorePipeline:
             timeout_s=config.FLASHSCORE_SCRAPER_TIMEOUT_S,
         )
         if match_url:
-            result = svc.collect_for_url(match_url)
+            result = svc.collect_for_url(match_url, discovery_hints=discovery_hints)
         elif home and away and date_str:
             result = svc.collect_for_teams(home, away, date_str, competition_code=competition_code)
         else:
@@ -268,6 +275,7 @@ class LiveFlashscorePipeline:
         away: Optional[str] = None,
         date_str: Optional[str] = None,
         competition_code: Optional[str] = None,
+        discovery_hints: Optional[dict] = None,
     ) -> LivePipelineResult:
         scraper_url = _resolve_scraper_url(self._scraper_url)
         if not scraper_url:
@@ -294,6 +302,7 @@ class LiveFlashscorePipeline:
                     away=away,
                     date_str=date_str,
                     competition_code=competition_code,
+                    discovery_hints=discovery_hints,
                 )
             else:
                 fetch_out = self._fetch_facts(

@@ -17,6 +17,7 @@ from typing import Optional, Sequence
 
 from football_agent.discovery.competition_resolver import CompetitionResolverService
 from football_agent.discovery.fixture_discovery import FixtureDiscoveryService
+from football_agent.eval_pool.discovery_debug import debug_pool_entry_discovery
 
 logging.basicConfig(level=logging.INFO)
 
@@ -101,6 +102,34 @@ def _cmd_discover(args: argparse.Namespace) -> int:
     return 0 if result.count or "no_fixtures" in " ".join(result.warnings) else 1
 
 
+def _cmd_pool_entry(args: argparse.Namespace) -> int:
+    payload = debug_pool_entry_discovery(
+        args.pool_key,
+        date_from=args.date_from,
+        date_to=args.date_to or args.date_from,
+        use_discovery_fallback=not args.no_discovery_fallback,
+    )
+    stats = payload["stats"]
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Pool: {payload['pool_key']} query={payload['query']!r}")
+        print(f"Range: {payload['date_from']} .. {payload['date_to']}")
+        print(
+            f"seen={stats['seen']} in_range={stats['in_range']} "
+            f"skipped_out_of_range={stats['skipped_out_of_range']}"
+        )
+        if payload["warnings"]:
+            print(f"Warnings: {', '.join(payload['warnings'][:8])}")
+        print("In-range samples:")
+        for row in payload["samples_in_range"]:
+            print(
+                f"  {row['fixture_date']} {row['home']} vs {row['away']} "
+                f"(time={row['time']!r})"
+            )
+    return 0 if stats["in_range"] > 0 else 1
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Universal competition discovery (Flashscore-first).")
     parser.add_argument("--scraper-url", help="Override FLASHSCORE_SCRAPER_URL")
@@ -126,6 +155,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p_all.add_argument("--date-to", required=False)
     p_all.add_argument("--allow-ambiguous", action="store_true")
     p_all.set_defaults(func=_cmd_discover)
+
+    p_pool = sub.add_parser("pool-entry", help="Eval-pool entry discovery + date filter (accumulate path)")
+    p_pool.add_argument("pool_key", help="e.g. estonia_meistriliiga")
+    p_pool.add_argument("--date-from", required=True)
+    p_pool.add_argument("--date-to", required=False)
+    p_pool.add_argument("--no-discovery-fallback", action="store_true")
+    p_pool.set_defaults(func=_cmd_pool_entry)
 
     args = parser.parse_args(list(argv) if argv is not None else None)
     return int(args.func(args))

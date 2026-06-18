@@ -15,6 +15,8 @@ from football_agent.discovery.models import (
 )
 from football_agent.discovery.scraper_client import FlashscoreDiscoveryClient
 
+from football_agent.eval_pool.settle import kickoff_date_from_raw
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,12 +25,8 @@ def _fixture_from_raw(raw: dict) -> DiscoveredFixture:
     url = str(raw.get("source_url") or raw.get("url") or "").strip()
     home = str(raw.get("home_team_name") or raw.get("home_team") or raw.get("home") or "")
     away = str(raw.get("away_team_name") or raw.get("away_team") or raw.get("away") or "")
-    kickoff = raw.get("kickoff_utc") or raw.get("date")
-    match_date = None
-    if kickoff:
-        text = str(kickoff)
-        if len(text) >= 10:
-            match_date = text[:10]
+    match_date = kickoff_date_from_raw(raw)
+    kickoff = raw.get("kickoff_utc") or raw.get("date") or match_date
     return DiscoveredFixture(
         match_id=match_id or f"fs-{home}-{away}",
         match_url=url,
@@ -136,7 +134,18 @@ class FixtureDiscoveryService:
         if not raw_list:
             warnings.append("no_fixtures_in_date_range")
 
-        fixtures = [_fixture_from_raw(r) for r in raw_list if r.get("home_team_name") or r.get("home")]
+        ref_year = int(date_from[:4])
+        enriched: List[dict] = []
+        for row in raw_list:
+            if not (row.get("home_team_name") or row.get("home")):
+                continue
+            item = dict(row)
+            item.setdefault("_discovery_date_from", date_from)
+            item.setdefault("_discovery_date_to", end)
+            item.setdefault("_discovery_reference_year", ref_year)
+            enriched.append(item)
+
+        fixtures = [_fixture_from_raw(r) for r in enriched]
         return FixtureDiscoveryResult(
             competition=competition,
             date_from=date_from,

@@ -46,7 +46,7 @@ WAVE1_LEAGUE_POOL: Tuple[LeaguePoolEntry, ...] = (
         key="estonia_premium_liiga",
         display_name="Estonia Premium Liiga",
         countries=("estonia",),
-        name_patterns=("premium liiga",),
+        name_patterns=("premium liiga", "meistriliiga women"),
         registry_code="FS_ESTONIA_PREMIUM_LIIGA",
     ),
     LeaguePoolEntry(

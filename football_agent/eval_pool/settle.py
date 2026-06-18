@@ -91,17 +91,83 @@ def extract_final_score(raw: dict) -> Optional[Tuple[int, int]]:
     return hs, aw
 
 
-def kickoff_date_from_raw(raw: dict, *, fallback_date: Optional[str] = None) -> Optional[str]:
-    ko = raw.get("kickoff_utc") or raw.get("date") or raw.get("match_date")
-    if ko:
-        text = str(ko).strip()
-        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
-            return text[:10]
+def _parse_date_token(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    m = re.match(r"^(\d{1,2})[./](\d{1,2})[./](\d{4})", text)
+    if m:
+        d, mo, y = m.groups()
+        return f"{y}-{mo.zfill(2)}-{d.zfill(2)}"
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return dt.date().isoformat()
+    except ValueError:
+        return None
+
+
+_FLASHSCORE_TIME_DATE_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.")
+
+
+def date_from_flashscore_display_time(
+    time_val: Any,
+    *,
+    reference_year: int,
+) -> Optional[str]:
+    """
+    Parse Flashscore fixture list ``time`` values like ``20.06. 14:30``.
+
+    The scraper often leaves ``date``/``kickoff_utc`` null while embedding
+    day/month in ``time``; year comes from the wave/discovery query context.
+    """
+    if time_val is None:
+        return None
+    m = _FLASHSCORE_TIME_DATE_RE.match(str(time_val).strip())
+    if not m:
+        return None
+    day, month = int(m.group(1)), int(m.group(2))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    return f"{reference_year}-{month:02d}-{day:02d}"
+
+
+def _reference_year_from_raw(raw: dict, *, reference_year: Optional[int] = None) -> Optional[int]:
+    if reference_year is not None:
+        return reference_year
+    explicit = raw.get("_discovery_reference_year")
+    if explicit is not None:
         try:
-            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            return dt.date().isoformat()
-        except ValueError:
+            return int(explicit)
+        except (TypeError, ValueError):
             pass
+    dfrom = raw.get("_discovery_date_from")
+    if dfrom and len(str(dfrom)) >= 4:
+        try:
+            return int(str(dfrom)[:4])
+        except ValueError:
+            return None
+    return None
+
+
+def kickoff_date_from_raw(
+    raw: dict,
+    *,
+    fallback_date: Optional[str] = None,
+    reference_year: Optional[int] = None,
+) -> Optional[str]:
+    for key in ("kickoff_utc", "date", "match_date"):
+        parsed = _parse_date_token(raw.get(key))
+        if parsed:
+            return parsed
+    year = _reference_year_from_raw(raw, reference_year=reference_year)
+    if year is not None:
+        parsed = date_from_flashscore_display_time(raw.get("time"), reference_year=year)
+        if parsed:
+            return parsed
     return fallback_date
 
 

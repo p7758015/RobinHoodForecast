@@ -14,6 +14,7 @@ from football_agent import config
 from football_agent.collectors.apply_bundle import apply_bundle_to_facts
 from football_agent.collectors.contracts import CollectionTrace, MatchCollectionBundle, MatchRef
 from football_agent.collectors.flashscore.client import FlashscoreCollectorClient
+from football_agent.collectors.flashscore.discovery_hints import merge_discovery_hints
 from football_agent.collectors.orchestrator import MatchCollectorOrchestrator
 from football_agent.flashscore.adapters.errors import FlashscoreScraperError
 from football_agent.flashscore.models import FlashscoreMatchFacts
@@ -48,7 +49,12 @@ class MatchCollectionService:
         )
         self._orchestrator = MatchCollectorOrchestrator()
 
-    def collect_for_url(self, match_url: str) -> MatchCollectionServiceResult:
+    def collect_for_url(
+        self,
+        match_url: str,
+        *,
+        discovery_hints: Optional[dict] = None,
+    ) -> MatchCollectionServiceResult:
         ref = MatchRef(match_url=match_url.strip())
         try:
             raw = self._client.fetch_match_raw_enriched(match_url)
@@ -58,6 +64,7 @@ class MatchCollectionService:
                 error_message=str(exc),
             )
 
+        raw = merge_discovery_hints(raw, discovery_hints)
         return self._finish_from_raw(raw, ref)
 
     def collect_for_teams(

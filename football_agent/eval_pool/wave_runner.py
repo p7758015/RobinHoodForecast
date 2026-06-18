@@ -14,6 +14,7 @@ from football_agent.eval_pool.calibration_report import collect_settled_pool_eva
 from football_agent.eval_pool.report import LeagueEvalPoolReporter
 from football_agent.eval_pool.settle import settle_league_pool_from_flashscore
 from football_agent.eval_pool.wave_manifest import EvalWaveManifest
+from football_agent.eval_pool.wave_predictions import collect_wave_predictions, predictions_to_json
 from football_agent.eval_pool.wave_summary import (
     build_wave_cli_summary,
     write_wave_artifacts,
@@ -59,6 +60,7 @@ class EvalWaveRunner:
             scraper_url=self.scraper_url,
             skip_openclaw=self.skip_openclaw,
             use_discovery_fallback=self.use_discovery_fallback,
+            expected_matches=self.manifest.expected_matches,
         )
 
     def update_results(self) -> Dict[str, Any]:
@@ -149,6 +151,7 @@ class EvalWaveRunner:
         logger.info("wave report %s", self.manifest.wave_name)
         coverage, calibration = self._build_reports()
         settlement = self.settle_wave()
+        prediction_views = collect_wave_predictions(self.manifest, db_path=self.db_path)
         payload: Dict[str, Any] = {
             "wave": self._wave_meta(),
             "accumulate": accumulate,
@@ -156,6 +159,8 @@ class EvalWaveRunner:
             "settlement": settlement,
             "coverage_report": coverage,
             "calibration": calibration,
+            "predictions": predictions_to_json(prediction_views),
+            "prediction_views": prediction_views,
         }
 
         output_paths: Dict[str, str] = {}
@@ -205,6 +210,7 @@ class EvalWaveRunner:
             coverage, calibration = self._build_reports()
             stages["coverage_report"] = coverage
             stages["calibration"] = calibration
+            stages["prediction_views"] = collect_wave_predictions(self.manifest, db_path=self.db_path)
         except Exception as exc:
             logger.exception("report-wave failed")
             stages["coverage_report"] = {"status": "failed", "error": str(exc)}
@@ -217,6 +223,8 @@ class EvalWaveRunner:
             "settlement": stages.get("settlement"),
             "coverage_report": stages.get("coverage_report"),
             "calibration": stages.get("calibration"),
+            "predictions": predictions_to_json(stages.get("prediction_views") or []),
+            "prediction_views": stages.get("prediction_views") or [],
         }
 
         output_paths: Dict[str, str] = {}

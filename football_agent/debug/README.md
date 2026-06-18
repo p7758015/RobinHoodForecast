@@ -117,3 +117,50 @@ Scenarios: `flashscore-only` | `flashscore-openclaw` | `openclaw-degraded` | `pe
 - `flashscore_trace` — Flashscore facts only / fixture export
 - `merged_scoring_trace` — offline fixtures → scorer
 - `offline_evaluation_trace` — persisted runs evaluation
+
+## Eval wave — `eval_wave_runner`
+
+Operational preset `june18_21_first_batch` (and custom manifests under `data/eval_waves/`).
+
+**Storage:** SQLite `football_agent/data/football_agent.db` — tables `analysis_runs_v2`, `analysis_predictions_v2`, `analysis_snapshots_v2`, `match_results` (see `eval_pool/wave_predictions.py`).
+
+### View predictions (read-only)
+
+```bash
+cd football_agent
+
+# Terminal table — all scored runs in wave date/pool scope
+python -m football_agent.debug.eval_wave_runner list-wave-predictions --preset june18_21_first_batch
+
+# JSON export
+python -m football_agent.debug.eval_wave_runner list-wave-predictions --preset june18_21_first_batch --json
+
+# One run by UUID
+python -m football_agent.debug.eval_wave_runner show-run --run-id <run_id>
+```
+
+Columns: `date`, `pool_key`, `home`, `away`, `p_h`/`p_d`/`p_a` (model 1X2), `best` market, `p*`, book `odds`, `conf`, `score`, settle `stl`, truncated `run_id`.
+
+### Report / full cycle
+
+| Command | Writes DB? | Purpose |
+|---------|------------|---------|
+| `accumulate-wave` | yes (runs) | Discover fixtures → live pipeline → persist |
+| `update-results` | yes (`match_results`) | Finished scores from Flashscore |
+| `settle-wave` | no | Hit-rate stats (join predictions + results) |
+| `report-wave` | no | Coverage + calibration + **predictions markdown** artifact |
+| `full-wave` | yes + report | accumulate → update-results → settle stats → report |
+| `cleanup-wave` | yes (delete) | Remove wave runs (`--apply`; dry-run default) |
+| `list-wave-predictions` | no | Human-readable prediction list |
+| `show-run` | no | Single run detail |
+
+```bash
+# Metrics + artifacts (JSON + markdown + predictions table) — no re-accumulate
+python -m football_agent.debug.eval_wave_runner report-wave --preset june18_21_first_batch
+
+# Full operational cycle (re-runs accumulate + fetches results)
+python -m football_agent.debug.eval_wave_runner full-wave --preset june18_21_first_batch
+```
+
+Artifacts: `football_agent/data/eval_wave_reports/<wave>_<timestamp>.{json,md,_predictions.md}`.
+

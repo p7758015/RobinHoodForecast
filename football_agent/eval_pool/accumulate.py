@@ -26,7 +26,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from football_agent import config
 
-from football_agent.eval_pool.fixture_sources import fetch_fixtures_for_pool_entry
+from football_agent.eval_pool.fixture_sources import FixtureFetchResult, fetch_fixtures_for_pool_entry
+
+from football_agent.eval_pool.fixture_date import evaluate_fixture_date_guard, is_discovery_fixture
 
 from football_agent.eval_pool.scope import LOW_CONFIDENCE_THRESHOLD, LeaguePoolEntry, filter_pool_keys, resolve_pool_entry
 
@@ -116,7 +118,15 @@ def _empty_summary(*, date_from: str, date_to: str, league_keys: Sequence[str]) 
 
         "fixtures_found": 0,
 
+        "fixtures_seen_total": 0,
+
+        "fixtures_in_range": 0,
+
         "fixtures_in_scope": 0,
+
+        "fixtures_out_of_range_skipped": 0,
+
+        "expected_matches": None,
 
         "discovery_fixtures_added": 0,
 
@@ -133,6 +143,8 @@ def _empty_summary(*, date_from: str, date_to: str, league_keys: Sequence[str]) 
         "low_confidence_runs": 0,
 
         "persist_success": 0,
+
+        "persisted_runs": 0,
 
         "persist_fail": 0,
 
@@ -186,6 +198,8 @@ def accumulate_league_pool(
 
     fetch_fixtures_for_entry_fn: Optional[Callable] = None,
 
+    expected_matches: Optional[int] = None,
+
 ) -> Dict[str, Any]:
 
     """
@@ -219,6 +233,8 @@ def accumulate_league_pool(
     summary = _empty_summary(date_from=date_from, date_to=date_to, league_keys=keys)
 
     summary["use_discovery_fallback"] = fallback
+
+    summary["expected_matches"] = expected_matches
 
     competitions_seen: set[str] = set()
 
@@ -316,7 +332,7 @@ def accumulate_league_pool(
 
             try:
 
-                entry_raws, disc_warnings = entry_fetch(
+                fetch_result = entry_fetch(
 
                     entry,
 
@@ -326,13 +342,29 @@ def accumulate_league_pool(
 
                     use_discovery_fallback=fallback,
 
+                    wave_date_from=date_from,
+
+                    wave_date_to=date_to,
+
                 )
+                if isinstance(fetch_result, FixtureFetchResult):
+                    entry_raws = fetch_result.fixtures
+                    disc_warnings = fetch_result.warnings
+                    fetch_stats = fetch_result.stats
+                else:
+                    # Legacy test doubles may still return a 3-tuple.
+                    entry_raws, disc_warnings, fetch_stats = fetch_result
 
             except Exception as exc:
                 logger.warning("fixture fetch failed entry=%s date=%s: %s", entry.key, date_str, exc)
                 summary["discovery_warnings"].append(f"fixture_fetch_error:{entry.key}:{date_str}")
                 entry_raws = []
                 disc_warnings = []
+                fetch_stats = None
+
+            if fetch_stats is not None:
+                summary["fixtures_seen_total"] += fetch_stats.seen
+                summary["fixtures_out_of_range_skipped"] += fetch_stats.skipped_out_of_range
 
             for w in disc_warnings:
 
@@ -345,6 +377,48 @@ def accumulate_league_pool(
 
 
             for raw in entry_raws:
+
+                explicit_date, fixture_date, in_range = evaluate_fixture_date_guard(
+                    raw,
+                    date_from,
+                    date_to,
+                    loop_date=date_str,
+                )
+                logger.info(
+                    "fixture_date_guard entry=%s match_id=%s explicit=%s fixture_date=%s "
+                    "in_range=%s discovery=%s loop_day=%s",
+                    entry.key,
+                    raw.get("match_id"),
+                    explicit_date,
+                    fixture_date,
+                    in_range,
+                    is_discovery_fixture(raw),
+                    date_str,
+                )
+                if not in_range or fixture_date is None:
+                    logger.error(
+                        "OUT_OF_RANGE_FIXTURE blocked entry=%s match_id=%s explicit=%s "
+                        "fixture_date=%s wave=%s..%s discovery=%s",
+                        entry.key,
+                        raw.get("match_id"),
+                        explicit_date,
+                        fixture_date,
+                        date_from,
+                        date_to,
+                        is_discovery_fixture(raw),
+                    )
+                    summary["fixtures_out_of_range_skipped"] += 1
+                    summary["errors"].append(
+                        {
+                            "date": date_str,
+                            "entry": entry.key,
+                            "match_id": raw.get("match_id"),
+                            "error": "out_of_range_fixture",
+                            "explicit_date": explicit_date,
+                            "fixture_date": fixture_date,
+                        }
+                    )
+                    continue
 
                 pool_entry: Optional[LeaguePoolEntry] = entry
 
@@ -370,7 +444,7 @@ def accumulate_league_pool(
 
                 dedupe = _fixture_dedupe_key(raw)
 
-                proc_key = (date_str, entry.key, dedupe[0], dedupe[1])
+                proc_key = (fixture_date, entry.key, dedupe[0], dedupe[1])
 
                 if proc_key in processed_keys:
 
@@ -381,6 +455,8 @@ def accumulate_league_pool(
 
 
                 summary["fixtures_in_scope"] += 1
+
+                summary["fixtures_in_range"] += 1
 
                 competitions_seen.add(pool_entry.display_name)
 
@@ -438,9 +514,24 @@ def accumulate_league_pool(
 
                 pipeline = _make_pipeline()
 
+                discovery_hints = None
+                if raw.get("_discovery_source"):
+                    discovery_hints = {
+                        "home_team_name": raw.get("home_team_name") or raw.get("home"),
+                        "away_team_name": raw.get("away_team_name") or raw.get("away"),
+                        "competition_name": comp_name,
+                        "competition_country": comp_country,
+                        "fixture_date": fixture_date,
+                        "kickoff_utc": raw.get("kickoff_utc"),
+                        "match_id": raw.get("match_id"),
+                    }
+
                 try:
 
-                    result = pipeline.analyze_flashscore_url(match_url)
+                    result = pipeline.analyze_flashscore_url(
+                        match_url,
+                        discovery_hints=discovery_hints,
+                    )
 
                 except Exception as exc:
 
@@ -470,7 +561,7 @@ def accumulate_league_pool(
 
                 row: Dict[str, Any] = {
 
-                    "date": date_str,
+                    "date": fixture_date,
 
                     "pool_key": entry.key,
 
@@ -544,6 +635,8 @@ def accumulate_league_pool(
 
                     summary["persist_success"] += 1
 
+                    summary["persisted_runs"] += 1
+
                 else:
 
                     summary["persist_fail"] += 1
@@ -561,6 +654,11 @@ def accumulate_league_pool(
 
 
     summary["competitions_processed"] = sorted(competitions_seen)
+
+    if expected_matches is not None and summary["fixtures_in_range"] != expected_matches:
+        summary["discovery_warnings"].append(
+            f"expected_matches_mismatch:expected={expected_matches}:actual_in_range={summary['fixtures_in_range']}"
+        )
 
     if fallback and summary["fixtures_in_scope"] == 0 and not summary["discovery_warnings"]:
 
