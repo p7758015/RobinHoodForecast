@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
+from football_agent.domain.competition_family import classify_competition_family, pool_entry_accepts_family
+
 
 def _norm(text: Optional[str]) -> str:
     return (text or "").strip().lower()
@@ -102,6 +104,20 @@ WAVE_EXTENSION_POOL: Tuple[LeaguePoolEntry, ...] = (
         name_patterns=("a lyga", "alyga", "lithuania"),
         registry_code="FS_LITHUANIA_A_LYGA",
     ),
+    LeaguePoolEntry(
+        key="ireland_premier",
+        display_name="Ireland Premier Division",
+        countries=("ireland",),
+        name_patterns=("premier division", "league of ireland", "ireland premier"),
+        registry_code="FS_IRELAND_PREMIER",
+    ),
+    LeaguePoolEntry(
+        key="china_super_league",
+        display_name="Chinese Super League",
+        countries=("china",),
+        name_patterns=("super league", "chinese super", "csl", "china super"),
+        registry_code="FS_CHINA_SUPER_LEAGUE",
+    ),
 )
 
 WAVE1_POOL_KEYS: Tuple[str, ...] = tuple(e.key for e in WAVE1_LEAGUE_POOL)
@@ -115,11 +131,14 @@ def resolve_pool_entry(
     competition_name: Optional[str],
     competition_country: Optional[str] = None,
 ) -> Optional[LeaguePoolEntry]:
-    """Return wave-1 pool entry when competition name + country match."""
+    """Return wave pool entry when competition name + country + family match."""
     comp = _norm(competition_name)
     if not comp:
         return None
     country = _norm(competition_country)
+    family_meta = classify_competition_family(competition_name=comp, country=competition_country)
+
+    matches: list[LeaguePoolEntry] = []
     for entry in all_pool_entries():
         name_ok = any(pat in comp for pat in entry.name_patterns)
         if not name_ok:
@@ -128,8 +147,19 @@ def resolve_pool_entry(
             country_ok = country in entry.countries or any(c in comp for c in entry.countries)
             if not country_ok:
                 continue
-        return entry
-    return None
+        matches.append(entry)
+
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+
+    filtered = [
+        e for e in matches if pool_entry_accepts_family(e.registry_code, family_meta.family)
+    ]
+    if len(filtered) == 1:
+        return filtered[0]
+    return max(matches, key=lambda e: max(len(p) for p in e.name_patterns))
 
 
 def filter_pool_keys(keys: Optional[Sequence[str]]) -> Tuple[LeaguePoolEntry, ...]:

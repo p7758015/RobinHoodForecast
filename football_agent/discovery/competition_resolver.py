@@ -16,6 +16,7 @@ from football_agent.discovery.models import (
 )
 from football_agent.discovery.registry_lookup import lookup_registry_by_pool_entry, lookup_registry_candidates
 from football_agent.discovery.scraper_client import FlashscoreDiscoveryClient
+from football_agent.domain.competition_family import CompetitionFamily, classify_competition_family
 from football_agent.flashscore.models import FlashscoreMeta
 from football_agent.services.competition_classifier import classify_competition_meta
 
@@ -97,6 +98,22 @@ def _pick_best(
             s += 2
         if name == q:
             s += 8
+        fam = classify_competition_family(
+            competition_code=c.registry_code,
+            competition_name=c.competition_name,
+            country=c.country,
+        ).family
+        q_women = any(tok in q for tok in ("women", "woman", "femin", "frauen", "ladies"))
+        if q_women:
+            if fam == CompetitionFamily.WOMEN_SENIOR_LEAGUE:
+                s += 8
+            elif fam == CompetitionFamily.MEN_SENIOR_LEAGUE:
+                s -= 6
+        else:
+            if fam == CompetitionFamily.MEN_SENIOR_LEAGUE:
+                s += 4
+            elif fam == CompetitionFamily.WOMEN_SENIOR_LEAGUE:
+                s -= 6
         return (s, -len(candidates))
 
     ranked = sorted(candidates, key=_score, reverse=True)

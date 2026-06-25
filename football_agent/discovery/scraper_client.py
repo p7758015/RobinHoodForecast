@@ -18,6 +18,7 @@ class FlashscoreDiscoveryClient:
     Thin wrapper over scraper discovery API:
     - GET /v1/competitions/search?q=
     - GET /v1/competitions/fixtures?competition_url=&date_from=&date_to=
+    - GET /v1/competitions/results?competition_url=&date_from=&date_to=
     """
 
     def __init__(
@@ -72,6 +73,36 @@ class FlashscoreDiscoveryClient:
         data = get_json(
             self._session,
             f"{base}/v1/competitions/fixtures",
+            params=params,
+            timeout_s=self._timeout,
+            error_cls=FlashscoreScraperUnavailableError,
+        )
+        if isinstance(data, dict):
+            matches = data.get("matches")
+            if isinstance(matches, list):
+                return [m for m in matches if isinstance(m, dict)]
+        return normalize_match_list(data)
+
+    def fetch_competition_results(
+        self,
+        competition_url: str,
+        *,
+        date_from: str,
+        date_to: Optional[str] = None,
+        enrich_detail: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Finished matches from competition /results/ tab (historical settlement)."""
+        base = self._require_base()
+        params: Dict[str, str] = {
+            "competition_url": competition_url.strip(),
+            "date_from": date_from,
+            "date_to": date_to or date_from,
+        }
+        if enrich_detail:
+            params["enrich_detail"] = "true"
+        data = get_json(
+            self._session,
+            f"{base}/v1/competitions/results",
             params=params,
             timeout_s=self._timeout,
             error_cls=FlashscoreScraperUnavailableError,

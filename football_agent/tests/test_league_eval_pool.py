@@ -38,6 +38,7 @@ FIXTURES = Path(__file__).parent / "data"
     [
         ("Premier League", "Kazakhstan", "kazakhstan_premier"),
         ("Meistriliiga", "Estonia", "estonia_meistriliiga"),
+        ("Meistriliiga Women", "Estonia", "estonia_premium_liiga"),
         ("Premium Liiga", "Estonia", "estonia_premium_liiga"),
         ("Virsliga", "Latvia", "latvia_virsliga"),
         ("Brazil Serie B", "Brazil", "brazil_serie_b"),
@@ -123,7 +124,7 @@ class _FakePipeline:
     odds: str = "partial"
     confidence: float = 0.62
 
-    def analyze_flashscore_url(self, match_url: str) -> LivePipelineResult:
+    def analyze_flashscore_url(self, match_url: str, **kwargs) -> LivePipelineResult:
         snap = make_snapshot()
         pred = MatchPredictionResultV2(
             match_meta=snap.match_meta,
@@ -179,7 +180,7 @@ def test_accumulate_skips_parked_and_out_of_scope() -> None:
     calls: List[str] = []
 
     class _TrackingPipeline(_FakePipeline):
-        def analyze_flashscore_url(self, match_url: str) -> LivePipelineResult:
+        def analyze_flashscore_url(self, match_url: str, **kwargs) -> LivePipelineResult:
             calls.append(match_url)
             return super().analyze_flashscore_url(match_url)
 
@@ -216,7 +217,7 @@ def test_accumulate_tolerates_partial_odds_and_pipeline_errors() -> None:
         def __init__(self) -> None:
             self._n = 0
 
-        def analyze_flashscore_url(self, match_url: str) -> LivePipelineResult:
+        def analyze_flashscore_url(self, match_url: str, **kwargs) -> LivePipelineResult:
             self._n += 1
             if "kz-3" in match_url or self._n == 2:
                 return LivePipelineResult(success=False, path="flashscore_url", stage_failed="fetch")

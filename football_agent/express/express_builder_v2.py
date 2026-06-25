@@ -11,6 +11,7 @@ import math
 from typing import List, Optional, Tuple
 
 from football_agent.competition_policy import is_express_allowed
+from football_agent.scorers.selection_policy import express_candidate_allowed
 from football_agent.config import (
     EXPRESS_MAX_ODDS,
     EXPRESS_MIN_LEG_ODDS,
@@ -63,7 +64,11 @@ class ExpressBuilderV2:
 
         for result in results:
             try:
-                policy = is_express_allowed(result.match_meta.competition_code)
+                policy = is_express_allowed(
+                    result.match_meta.competition_code,
+                    competition_name=result.match_meta.competition_name,
+                    competition_country=result.match_meta.country,
+                )
                 if not policy.allowed:
                     logger.warning(
                         "Express policy skip match %s competition=%s warning=%s",
@@ -73,6 +78,14 @@ class ExpressBuilderV2:
                     )
                     continue
                 if not result.express_safety.allow_for_express:
+                    continue
+                allowed, skip_reason = express_candidate_allowed(result)
+                if not allowed:
+                    logger.info(
+                        "Express selection policy skip match %s: %s",
+                        result.match_meta.match_id,
+                        skip_reason,
+                    )
                     continue
                 market = result.best_market
                 if market is None:

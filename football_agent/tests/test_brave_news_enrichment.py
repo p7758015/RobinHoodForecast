@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 from football_agent.flashscore.models import FlashscoreMatchFacts, FlashscoreMeta, FlashscoreProvenance
@@ -42,9 +43,61 @@ def test_brave_client_auth_header() -> None:
     assert kwargs["headers"]["X-Subscription-Token"] == "test-key"
 
 
+def test_brave_client_non_json_response_raises_clear_error() -> None:
+    session = MagicMock()
+    bad = MagicMock(
+        status_code=200,
+        headers={"content-type": "text/html"},
+        text="<html>not json</html>",
+    )
+    bad.json.side_effect = ValueError("Expecting value")
+    session.get.return_value = bad
+    client = BraveSearchClient(api_key="k", session=session)
+    from football_agent.services.brave_search_client import BraveSearchUnavailableError
+
+    with pytest.raises(BraveSearchUnavailableError, match="non-JSON"):
+        client.search("test query")
+
+
 def test_brave_client_empty_query() -> None:
     client = BraveSearchClient(api_key="k")
     assert client.search("  ") == []
+
+
+def test_normalize_brave_search_lang_pt_alias() -> None:
+    from football_agent.services.brave_search_client import normalize_brave_search_lang
+
+    assert normalize_brave_search_lang("pt") == "pt-br"
+    assert normalize_brave_search_lang("PT-BR") == "pt-br"
+    assert normalize_brave_search_lang("en") == "en"
+
+
+def test_filter_hits_accent_fold_team_match() -> None:
+    from datetime import datetime, timezone
+    from football_agent.services.brave_search_client import BraveSearchHit, filter_hits_by_lookback
+
+    hit = BraveSearchHit(
+        title="Palpite América-MG x Criciúma Série B",
+        description="preview do jogo",
+        topic_tags=["preview"],
+        published_at=datetime.now(timezone.utc),
+    )
+    kept = filter_hits_by_lookback(
+        [hit],
+        lookback_hours=72,
+        home_team="America MG",
+        away_team="Criciuma",
+    )
+    assert len(kept) == 1
+
+
+def test_brave_base_url_normalizes_bare_host(monkeypatch) -> None:
+    monkeypatch.setenv("BRAVE_SEARCH_BASE_URL", "https://api.search.brave.com")
+    from importlib import reload
+    import football_agent.config as cfg
+
+    reload(cfg)
+    assert cfg.BRAVE_SEARCH_BASE_URL.endswith("/res/v1/web/search")
 
 
 def test_brave_client_retry_on_failure() -> None:
@@ -74,6 +127,18 @@ def test_query_builder_dedup_and_coach_pass() -> None:
     )
     assert any(q.category == "h2h" for q in coach)
     assert any("press conference" in q.query for q in coach)
+
+
+def test_query_builder_brazil_serie_b_locale() -> None:
+    queries = build_match_news_queries(
+        home_team="America MG",
+        away_team="Criciuma",
+        competition_name="Serie B",
+        competition_country="Brazil",
+    )
+    joined = " ".join(q.query.lower() for q in queries)
+    assert "série b" in joined or "serie b" in joined
+    assert "escalação" in joined or "tecnico" in joined or "técnico" in joined
 
 
 def test_extraction_coach_signals() -> None:

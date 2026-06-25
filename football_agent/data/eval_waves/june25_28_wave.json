@@ -1,0 +1,26 @@
+{
+  "wave_name": "june25_28_wave",
+  "label": "Eval wave 25–28 Jun 2026",
+  "date_from": "2026-06-25",
+  "date_to": "2026-06-28",
+  "league_keys": [
+    "kazakhstan_premier",
+    "estonia_meistriliiga",
+    "estonia_premium_liiga",
+    "latvia_virsliga",
+    "brazil_serie_b",
+    "finland_veikkausliiga",
+    "morocco_botola",
+    "belarus_premier",
+    "chile_primera",
+    "lithuania_a_lyga",
+    "ireland_premier",
+    "china_super_league"
+  ],
+  "notes": {
+    "2026-06-25": "Latvia, Morocco",
+    "2026-06-26": "Belarus, Brazil Serie B, Estonia, Ireland, Latvia",
+    "2026-06-27": "Belarus, Brazil Serie B, China, Finland, Ireland",
+    "2026-06-28": "Belarus, Brazil Serie B, China, Estonia, Kazakhstan, Lithuania"
+  }
+}

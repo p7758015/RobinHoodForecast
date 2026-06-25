@@ -163,7 +163,7 @@ class LeagueScorerV2:
 
         book_odds = _book_odds_map(snapshot.odds)
         markets = self._build_market_predictions(probs, book_odds, conf)
-        best = self._pick_best_market(markets, conf)
+        best = self._pick_best_market(markets, conf, r_home=r_home, r_away=r_away)
 
         balance = abs(r_home - r_away)
         peak_result_prob = max(
@@ -422,19 +422,31 @@ class LeagueScorerV2:
         self,
         markets: List[MarketPredictionV2],
         confidence: float,
+        *,
+        r_home: float = 0.5,
+        r_away: float = 0.5,
     ) -> MarketPredictionV2:
         if not markets:
             return MarketPredictionV2(market_key="HOME_NOT_LOSE", probability=0.5, label="1X")
 
         by_key = {m.market_key: m for m in markets}
+        strength_balance = abs(r_home - r_away)
 
         def score(m: MarketPredictionV2) -> float:
             p = m.probability
             edge_bonus = max(0.0, (m.edge or 0.0)) * 2.0
+            if m.market_key in DOUBLE_CHANCE_KEYS and strength_balance >= 0.17:
+                edge_bonus = min(edge_bonus, 0.10)
             odds_factor = _best_market_odds_factor(m.book_odds)
             conf_factor = 0.55 + 0.45 * confidence
             type_weight = BEST_MARKET_TYPE_WEIGHT.get(m.market_key, 0.85)
             val = p * conf_factor * odds_factor * type_weight * (1.0 + edge_bonus)
+            val *= _dc_strength_alignment_factor(
+                m,
+                by_key=by_key,
+                r_home=r_home,
+                r_away=r_away,
+            )
             if m.market_key in DOUBLE_CHANCE_KEYS:
                 if m.book_odds is None:
                     val *= 0.78
@@ -549,6 +561,86 @@ def _confidence_calibrate_probabilities(probs: Dict[str, float], confidence: flo
     return {k: round(_clip01(0.5 + (float(p) - 0.5) * shrink), 4) for k, p in probs.items()}
 
 
+def _dc_strength_alignment_factor(
+    market: MarketPredictionV2,
+    *,
+    by_key: Dict[str, MarketPredictionV2],
+    r_home: float,
+    r_away: float,
+) -> float:
+    """Penalize underdog double-chance when team-strength gap is clear (blueprint: outcome from factors, not edge alone)."""
+    if market.market_key not in DOUBLE_CHANCE_KEYS:
+        return 1.0
+    balance = abs(r_home - r_away)
+    if balance < 0.17:
+        return 1.0
+    home_favored = r_home >= r_away
+    favored_key = "HOME_NOT_LOSE" if home_favored else "AWAY_NOT_LOSE"
+    underdog_key = "AWAY_NOT_LOSE" if home_favored else "HOME_NOT_LOSE"
+    if market.market_key != underdog_key:
+        return 1.0
+    favored = by_key.get(favored_key)
+    if favored is None:
+        return 1.0
+    prob_gap = favored.probability - market.probability
+    if prob_gap < 0.18:
+        return 1.0
+    shrink = min(1.0, prob_gap / 0.32)
+    return max(0.40, 1.0 - 0.58 * shrink)
+
+
+def explain_best_market_scores(
+    markets: List[MarketPredictionV2],
+    confidence: float,
+    *,
+    r_home: float,
+    r_away: float,
+) -> List[Dict[str, Any]]:
+    """Debug helper: ranked best-market candidate scores (same formula as _pick_best_market)."""
+    by_key = {m.market_key: m for m in markets}
+    strength_balance = abs(r_home - r_away)
+    rows: List[Dict[str, Any]] = []
+
+    def score(m: MarketPredictionV2) -> float:
+        p = m.probability
+        edge_bonus = max(0.0, (m.edge or 0.0)) * 2.0
+        if m.market_key in DOUBLE_CHANCE_KEYS and strength_balance >= 0.17:
+            edge_bonus = min(edge_bonus, 0.10)
+        odds_factor = _best_market_odds_factor(m.book_odds)
+        conf_factor = 0.55 + 0.45 * confidence
+        type_weight = BEST_MARKET_TYPE_WEIGHT.get(m.market_key, 0.85)
+        val = p * conf_factor * odds_factor * type_weight * (1.0 + edge_bonus)
+        align = _dc_strength_alignment_factor(m, by_key=by_key, r_home=r_home, r_away=r_away)
+        val *= align
+        if m.market_key in DOUBLE_CHANCE_KEYS:
+            if m.book_odds is None:
+                val *= 0.78
+            elif m.book_odds < BEST_MARKET_MIN_USEFUL_ODDS:
+                val *= 0.86
+            if p > 0.90:
+                win_key = "HOME_WIN" if m.market_key == "HOME_NOT_LOSE" else "AWAY_WIN"
+                win_m = by_key.get(win_key)
+                if win_m and win_m.probability >= 0.50:
+                    val *= 0.90
+        rows.append(
+            {
+                "market_key": m.market_key,
+                "probability": round(p, 4),
+                "book_odds": m.book_odds,
+                "edge": m.edge,
+                "pick_score": round(val, 4),
+                "strength_align": round(align, 4),
+            }
+        )
+        return val
+
+    pool = [m for m in markets if m.market_key in BEST_MARKET_CANDIDATE_KEYS] or list(markets)
+    for m in pool:
+        score(m)
+    rows.sort(key=lambda r: r["pick_score"], reverse=True)
+    return rows
+
+
 def _best_market_odds_factor(book_odds: Optional[float]) -> float:
     if book_odds is None:
         return 0.75
@@ -632,17 +724,42 @@ def _h2h_stats_from_context(h2h: H2HContextV2) -> H2HStats:
     )
 
 
+def _gd_attack_nudge(goal_difference: Optional[int], rounds_played: Optional[int]) -> float:
+    if goal_difference is None or not rounds_played or rounds_played <= 0:
+        return 0.0
+    return max(-0.22, min(0.22, goal_difference / (rounds_played * 3.0)))
+
+
+def _venue_attack_form(form_block, *, side: str) -> float:  # noqa: ANN001
+    venue = form_block.home_form_score if side == "home" else form_block.away_form_score
+    if venue != 0.5:
+        return venue
+    return form_block.last_5_form_score
+
+
 def _estimate_avg_goals(snapshot: MatchAnalysisSnapshotV2) -> Tuple[float, float]:
     h2h = snapshot.h2h_context
-    hf = snapshot.home_team_context.form.last_5_form_score
-    af = snapshot.away_team_context.form.last_5_form_score
+    hf = snapshot.home_team_context.form
+    af = snapshot.away_team_context.form
+    hm = snapshot.home_team_context.motivation
+    am = snapshot.away_team_context.motivation
+    rounds = snapshot.match_meta.rounds_played
+
+    home_attack = _venue_attack_form(hf, side="home")
+    away_attack = _venue_attack_form(af, side="away")
+    home_gd = _gd_attack_nudge(hm.goal_difference, rounds)
+    away_gd = _gd_attack_nudge(am.goal_difference, rounds)
 
     if h2h.team_h2h_total_matches >= 2:
-        home_g = max(0.6, min(2.8, 0.9 + h2h.h2h_btts_rate))
-        away_g = max(0.6, min(2.8, 0.9 + h2h.h2h_btts_rate))
+        base = max(0.6, min(2.8, 0.9 + h2h.h2h_btts_rate))
+        home_g = base + home_gd * 0.45
+        away_g = base + away_gd * 0.45
+        tilt = max(-0.12, min(0.12, h2h.h2h_btts_rate - 0.5))
+        home_g += tilt * 0.20
+        away_g += tilt * 0.20
     else:
-        home_g = max(0.7, min(2.5, 0.8 + hf * 1.2))
-        away_g = max(0.7, min(2.5, 0.8 + af * 1.2))
+        home_g = max(0.7, min(2.5, 0.8 + home_attack * 1.2 + home_gd * 0.55))
+        away_g = max(0.7, min(2.5, 0.8 + away_attack * 1.2 + away_gd * 0.55))
     return home_g, away_g
 
 

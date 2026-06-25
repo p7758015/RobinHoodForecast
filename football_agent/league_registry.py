@@ -47,6 +47,13 @@ class LeagueConfig:
     # Product policy flags (overridable via env allow/deny lists).
     analysis_allowed: bool = True
     express_allowed: bool = True
+    # Competition family guardrails (men / women / youth / reserves).
+    competition_family: str = "MEN_SENIOR_LEAGUE"
+    competition_subtype: Optional[str] = None
+    # Express selection tuning (post-scorer policy layer).
+    express_reliability: str = "NORMAL"  # HIGH | NORMAL | LOW
+    express_league_penalty: float = 0.0
+    express_avoid: bool = False
     # Flashscore competition page (fixtures tab derived automatically).
     flashscore_competition_url: Optional[str] = None
 
@@ -63,6 +70,11 @@ class LeagueParams:
     relegation_slots: int
     euro_slots: EuroSlots
     is_known: bool
+    competition_family: str = "MEN_SENIOR_LEAGUE"
+    competition_subtype: Optional[str] = None
+    is_women: bool = False
+    is_youth: bool = False
+    is_reserve: bool = False
 
 
 _REGISTRY: Dict[str, LeagueConfig] = {
@@ -123,6 +135,8 @@ _REGISTRY: Dict[str, LeagueConfig] = {
         country="Estonia",
         total_rounds=36,
         football_data_discoverable=False,
+        express_allowed=False,
+        competition_family="WOMEN_SENIOR_LEAGUE",
         flashscore_competition_url="https://www.flashscore.com/football/estonia/meistriliiga-women/",
     ),
     "FS_LATVIA_VIRSLIGA": LeagueConfig(
@@ -131,6 +145,9 @@ _REGISTRY: Dict[str, LeagueConfig] = {
         country="Latvia",
         total_rounds=36,
         football_data_discoverable=False,
+        express_reliability="LOW",
+        express_league_penalty=0.40,
+        express_avoid=True,
         flashscore_competition_url="https://www.flashscore.com/football/latvia/virsliga/",
     ),
     "FS_BRAZIL_SERIE_B": LeagueConfig(
@@ -182,6 +199,22 @@ _REGISTRY: Dict[str, LeagueConfig] = {
         total_rounds=36,
         football_data_discoverable=False,
         flashscore_competition_url="https://www.flashscore.com/football/lithuania/a-lyga/",
+    ),
+    "FS_IRELAND_PREMIER": LeagueConfig(
+        competition_code="FS_IRELAND_PREMIER",
+        display_name="Premier Division",
+        country="Ireland",
+        total_rounds=36,
+        football_data_discoverable=False,
+        flashscore_competition_url="https://www.flashscore.com/football/ireland/premier-division/",
+    ),
+    "FS_CHINA_SUPER_LEAGUE": LeagueConfig(
+        competition_code="FS_CHINA_SUPER_LEAGUE",
+        display_name="Chinese Super League",
+        country="China",
+        total_rounds=34,
+        football_data_discoverable=False,
+        flashscore_competition_url="https://www.flashscore.com/football/china/super-league/",
     ),
 }
 
@@ -241,6 +274,7 @@ def resolve_league_params(competition_code: str) -> LeagueParams:
             euro_slots={"ucl": DEFAULT_EURO_SLOTS["ucl"], "uel": DEFAULT_EURO_SLOTS["uel"]},
             is_known=False,
         )
+    fam = cfg.competition_family or "MEN_SENIOR_LEAGUE"
     return LeagueParams(
         competition_code=cfg.competition_code,
         display_name=cfg.display_name,
@@ -250,6 +284,11 @@ def resolve_league_params(competition_code: str) -> LeagueParams:
         relegation_slots=cfg.relegation_slots,
         euro_slots=_euro_slots(cfg),
         is_known=True,
+        competition_family=fam,
+        competition_subtype=cfg.competition_subtype,
+        is_women=fam == "WOMEN_SENIOR_LEAGUE",
+        is_youth=fam == "YOUTH_UXX",
+        is_reserve=fam == "RESERVES",
     )
 
 

@@ -65,6 +65,9 @@ class ScoringServiceV2:
 
         if decision.route == "league_full":
             prediction = self._scorer.score_snapshot(snapshot)
+            from football_agent.scorers.selection_policy import apply_calibration_selection_policy
+
+            prediction = apply_calibration_selection_policy(prediction, snapshot)
             scorer_name = "LeagueScorerV2"
             scoring_skipped = False
         else:
@@ -101,5 +104,9 @@ class ScoringServiceV2:
     ) -> MatchPredictionResultV2:
         decision = resolve_scorer_route(classification, snapshot=snapshot)
         if decision.route == "league_full":
-            return self._scorer.score_snapshot(snapshot)
+            prediction = self._scorer.score_snapshot(snapshot)
+            from football_agent.scorers.selection_policy import apply_calibration_selection_policy
+
+            prediction = apply_calibration_selection_policy(prediction, snapshot)
+            return prediction
         return build_parked_prediction(snapshot, decision)

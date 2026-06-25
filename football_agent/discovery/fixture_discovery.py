@@ -55,6 +55,7 @@ class FixtureDiscoveryService:
         scraper_api_key: Optional[str] = None,
         discovery_client: Optional[FlashscoreDiscoveryClient] = None,
         fixtures_fn: Optional[Callable[[str, str, str], List[dict]]] = None,
+        results_fn: Optional[Callable[[str, str, str], List[dict]]] = None,
         resolver: Optional[CompetitionResolverService] = None,
     ) -> None:
         base = (scraper_url or config.FLASHSCORE_SCRAPER_URL or "").strip().rstrip("/")
@@ -64,6 +65,7 @@ class FixtureDiscoveryService:
             else None
         )
         self._fixtures_fn = fixtures_fn
+        self._results_fn = results_fn
         self._resolver = resolver or CompetitionResolverService(
             scraper_url=base or None,
             discovery_client=self._client,
@@ -153,6 +155,78 @@ class FixtureDiscoveryService:
             fixtures=fixtures,
             warnings=warnings,
         )
+
+    def list_competition_results(
+        self,
+        competition: ResolvedCompetition,
+        *,
+        date_from: str,
+        date_to: Optional[str] = None,
+        enrich_detail: bool = False,
+    ) -> FixtureDiscoveryResult:
+        """Finished matches from scraper ``/v1/competitions/results`` (settlement path)."""
+        end = date_to or date_from
+        url = competition.candidate.url or competition.candidate.fixtures_url
+        warnings: List[str] = []
+
+        if not url:
+            return FixtureDiscoveryResult(
+                competition=competition,
+                date_from=date_from,
+                date_to=end,
+                fixtures=[],
+                warnings=["missing_competition_url"],
+            )
+
+        raw_list = self._fetch_results(url, date_from, end, enrich_detail=enrich_detail)
+        if not raw_list:
+            warnings.append("no_results_in_date_range")
+
+        ref_year = int(date_from[:4])
+        enriched: List[dict] = []
+        for row in raw_list:
+            if not (row.get("home_team_name") or row.get("home")):
+                continue
+            item = dict(row)
+            item.setdefault("_discovery_date_from", date_from)
+            item.setdefault("_discovery_date_to", end)
+            item.setdefault("_discovery_reference_year", ref_year)
+            item["_discovery_source"] = True
+            item["_discovery_results_source"] = True
+            enriched.append(item)
+
+        fixtures = [_fixture_from_raw(r) for r in enriched]
+        return FixtureDiscoveryResult(
+            competition=competition,
+            date_from=date_from,
+            date_to=end,
+            fixtures=fixtures,
+            warnings=warnings,
+        )
+
+    def _fetch_results(
+        self,
+        competition_url: str,
+        date_from: str,
+        date_to: str,
+        *,
+        enrich_detail: bool = False,
+    ) -> List[dict]:
+        if self._results_fn is not None:
+            return self._results_fn(competition_url, date_from, date_to)
+        if self._client is None:
+            logger.warning("Flashscore discovery client not configured")
+            return []
+        try:
+            return self._client.fetch_competition_results(
+                competition_url,
+                date_from=date_from,
+                date_to=date_to,
+                enrich_detail=enrich_detail,
+            )
+        except Exception as exc:
+            logger.warning("results discovery failed: %s", exc)
+            return []
 
     def _fetch_fixtures(self, competition_url: str, date_from: str, date_to: str) -> List[dict]:
         if self._fixtures_fn is not None:

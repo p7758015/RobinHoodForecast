@@ -18,6 +18,7 @@ def build_wave_cli_summary(
     settlement: Optional[Dict[str, Any]] = None,
     coverage_report: Optional[Dict[str, Any]] = None,
     calibration: Optional[Dict[str, Any]] = None,
+    quality_report: Optional[Dict[str, Any]] = None,
     output_paths: Optional[Dict[str, str]] = None,
 ) -> str:
     lines = [
@@ -39,6 +40,8 @@ def build_wave_cli_summary(
         lines.extend(_section_coverage(coverage_report))
     if calibration:
         lines.extend(_section_calibration(calibration))
+    if quality_report:
+        lines.extend(_section_quality(quality_report))
 
     if output_paths:
         lines.append("")
@@ -171,24 +174,49 @@ def _section_update_results(upd: Dict[str, Any]) -> list[str]:
     return [
         "",
         "Results fetch:",
+        f"  pipeline: {upd.get('pipeline', '—')}",
+        f"  fixtures in scope / in range: {upd.get('fixtures_in_scope')} / {upd.get('fixtures_in_range', '—')}",
         f"  results saved: {upd.get('results_saved')}",
         f"  finished in scope: {upd.get('finished_in_scope')}",
         f"  not finished: {upd.get('skipped_not_finished')}",
+        f"  detail enriched: {upd.get('detail_enriched', 0)}",
         f"  no score: {upd.get('skipped_no_score')}",
     ]
 
 
 def _section_settlement(stl: Dict[str, Any]) -> list[str]:
-    return [
+    coll = stl.get("collection_stats") or {}
+    lines = [
         "",
         "Settlement:",
         f"  league scored: {stl.get('league_scored_runs')}",
         f"  settled evaluable: {stl.get('settled_evaluable')}",
         f"  unresolved: {stl.get('unsettled')}",
         f"  parked skipped: {stl.get('parked_skipped')}",
+        f"  join exact / normalized / unresolved: "
+        f"{coll.get('join_exact_count', 0)}/{coll.get('join_normalized_count', 0)}/{coll.get('join_unresolved_count', 0)}",
         f"  hit rate: {_fmt_pct(stl.get('hit_rate'))}",
         f"  wins/losses: {stl.get('wins')}/{stl.get('losses')}",
     ]
+    return lines
+
+
+def _section_quality(quality: Dict[str, Any]) -> list[str]:
+    cov = quality.get("coverage") or {}
+    join = quality.get("join_quality") or {}
+    lines = [
+        "",
+        "Quality snapshot:",
+        f"  settled coverage: {cov.get('settled_coverage')}",
+        f"  evaluable coverage: {cov.get('evaluable_coverage')}",
+        f"  odds coverage: {cov.get('odds_coverage')}",
+        f"  normalized join share: {join.get('normalized_share_of_settled')}",
+    ]
+    for bullet in quality.get("weak_spots") or []:
+        lines.append(f"  • {bullet}")
+    if quality.get("insufficient_settled_sample") and quality.get("zero_sample_explanation"):
+        lines.append(f"  blocker: {quality['zero_sample_explanation']}")
+    return lines
 
 
 def _section_coverage(cov: Dict[str, Any]) -> list[str]:

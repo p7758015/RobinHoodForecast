@@ -138,6 +138,9 @@ def collect_settled_pool_eval_records(
         "no_best_market": 0,
         "settlement_incompatible": 0,
         "settled_evaluable": 0,
+        "join_exact_count": 0,
+        "join_normalized_count": 0,
+        "join_unresolved_count": 0,
     }
     records: List[SettledPoolEvalRecord] = []
 
@@ -187,7 +190,13 @@ def collect_settled_pool_eval_records(
         )
         if not settlement.resolved:
             stats["unsettled"] += 1
+            stats["join_unresolved_count"] += 1
             continue
+
+        if settlement.join_method == "exact":
+            stats["join_exact_count"] += 1
+        elif settlement.join_method == "normalized":
+            stats["join_normalized_count"] += 1
 
         best = pred.get("best_market")
         if not isinstance(best, dict):

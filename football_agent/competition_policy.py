@@ -13,6 +13,11 @@ import os
 from dataclasses import dataclass
 from typing import List, Optional, Set
 
+from football_agent.competition_family_policy import (
+    WARN_FAMILY_EXPRESS_DENIED,
+    is_express_family_allowed,
+    resolve_family_meta,
+)
 from football_agent.league_registry import (
     LeagueConfig,
     _normalize_code,
@@ -118,13 +123,33 @@ def is_analysis_allowed(competition_code: str) -> CompetitionPolicyDecision:
     )
 
 
-def is_express_allowed(competition_code: str) -> CompetitionPolicyDecision:
+def is_express_allowed(
+    competition_code: str,
+    *,
+    competition_name: Optional[str] = None,
+    competition_country: Optional[str] = None,
+) -> CompetitionPolicyDecision:
     """
     Whether a scored match from this competition may enter express candidate pool.
 
     Unknown / unregistered codes: denied (soft skip + warning).
+    Non men-senior families: denied by default.
     """
     code = _normalize_code(competition_code) or "UNKNOWN"
+    family_meta = resolve_family_meta(
+        competition_code=code,
+        competition_name=competition_name,
+        country=competition_country,
+    )
+    family_decision = is_express_family_allowed(family_meta.family)
+    if not family_decision.allowed:
+        return CompetitionPolicyDecision(
+            allowed=False,
+            competition_code=code,
+            reason=family_decision.reason,
+            warning=family_decision.warning or WARN_FAMILY_EXPRESS_DENIED,
+        )
+
     deny = _deny_set()
     if code in deny:
         return CompetitionPolicyDecision(
@@ -185,7 +210,9 @@ def filter_for_express(
     for result in results:
         meta = getattr(result, "match_meta", None)
         code = getattr(meta, "competition_code", None) if meta is not None else None
-        decision = is_express_allowed(str(code or ""))
+        name = getattr(meta, "competition_name", None) if meta is not None else None
+        country = getattr(meta, "country", None) if meta is not None else None
+        decision = is_express_allowed(str(code or ""), competition_name=name, competition_country=country)
         if decision.allowed:
             kept.append(result)
             continue

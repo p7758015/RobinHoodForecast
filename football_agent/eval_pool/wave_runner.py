@@ -12,7 +12,12 @@ from typing import Any, Callable, Dict, Optional
 from football_agent.eval_pool.accumulate import accumulate_league_pool
 from football_agent.eval_pool.calibration_report import collect_settled_pool_eval_records
 from football_agent.eval_pool.report import LeagueEvalPoolReporter
-from football_agent.eval_pool.settle import settle_league_pool_from_flashscore
+from football_agent.eval_pool.settle import collect_saved_settlement_identities, settle_league_pool
+from football_agent.eval_pool.wave_diagnostics import (
+    build_wave_quality_report,
+    build_wave_settlement_diagnostics,
+    write_diagnostics_artifacts,
+)
 from football_agent.eval_pool.wave_manifest import EvalWaveManifest
 from football_agent.eval_pool.wave_predictions import collect_wave_predictions, predictions_to_json
 from football_agent.eval_pool.wave_summary import (
@@ -35,7 +40,7 @@ class EvalWaveRunner:
     output_dir: Path = EVAL_WAVE_REPORTS_DIR
     _accumulate_fn: Callable[..., Dict[str, Any]] = field(default=accumulate_league_pool, repr=False)
     _update_results_fn: Callable[..., Dict[str, Any]] = field(
-        default=settle_league_pool_from_flashscore,
+        default=settle_league_pool,
         repr=False,
     )
 
@@ -67,12 +72,20 @@ class EvalWaveRunner:
         """Fetch finished match scores from Flashscore into match_results."""
         logger.info("wave update-results start %s", self.manifest.wave_name)
         try:
+            identities = collect_saved_settlement_identities(
+                league_keys=list(self.manifest.league_keys),
+                date_from=self.manifest.date_from,
+                date_to=self.manifest.date_to,
+                db_path=self.db_path,
+            )
             return self._update_results_fn(
                 date_from=self.manifest.date_from,
                 date_to=self.manifest.date_to,
                 league_keys=list(self.manifest.league_keys),
                 db_path=self.db_path,
                 scraper_url=self.scraper_url,
+                use_discovery_fallback=self.use_discovery_fallback,
+                saved_identity_rows=identities,
             )
         except Exception as exc:
             logger.exception("update-results failed: %s", exc)
@@ -141,17 +154,91 @@ class EvalWaveRunner:
         finally:
             reporter.close()
 
+    def diagnose_wave(
+        self,
+        *,
+        write_artifacts: bool = True,
+        probe_fetch: bool = True,
+    ) -> Dict[str, Any]:
+        """Read-only settlement diagnostics (does not modify predictions)."""
+        logger.info("wave diagnose %s", self.manifest.wave_name)
+        diagnostics = build_wave_settlement_diagnostics(
+            self.manifest,
+            db_path=self.db_path,
+            probe_fetch=probe_fetch,
+            scraper_url=self.scraper_url,
+        )
+        output_paths: Dict[str, str] = {}
+        if write_artifacts:
+            output_paths = write_diagnostics_artifacts(
+                self.manifest,
+                diagnostics,
+                output_dir=self.output_dir,
+            )
+        return {"diagnostics": diagnostics, "output_paths": output_paths}
+
+    def audit_wave(
+        self,
+        *,
+        write_artifacts: bool = True,
+        probe_fetch: bool = True,
+    ) -> Dict[str, Any]:
+        """Operational health-check: diagnostics + quality snapshot from current DB."""
+        logger.info("wave audit %s", self.manifest.wave_name)
+        diagnostics = build_wave_settlement_diagnostics(
+            self.manifest,
+            db_path=self.db_path,
+            probe_fetch=probe_fetch,
+            scraper_url=self.scraper_url,
+        )
+        quality = build_wave_quality_report(
+            self.manifest,
+            db_path=self.db_path,
+            diagnostics=diagnostics,
+        )
+        output_paths: Dict[str, str] = {}
+        if write_artifacts:
+            output_paths = write_diagnostics_artifacts(
+                self.manifest,
+                diagnostics,
+                quality,
+                output_dir=self.output_dir,
+            )
+        settlement = self.settle_wave()
+        return {
+            "diagnostics": diagnostics,
+            "quality": quality,
+            "settlement": settlement,
+            "output_paths": output_paths,
+            "cli_summary": _format_audit_cli_summary(self.manifest, diagnostics, quality, settlement),
+        }
+
     def report_wave(
         self,
         *,
         write_artifacts: bool = True,
         accumulate: Optional[Dict[str, Any]] = None,
         update_results: Optional[Dict[str, Any]] = None,
+        include_diagnostics: bool = False,
     ) -> Dict[str, Any]:
         logger.info("wave report %s", self.manifest.wave_name)
         coverage, calibration = self._build_reports()
         settlement = self.settle_wave()
         prediction_views = collect_wave_predictions(self.manifest, db_path=self.db_path)
+        diagnostics: Optional[Dict[str, Any]] = None
+        quality: Optional[Dict[str, Any]] = None
+        if include_diagnostics:
+            diagnostics = build_wave_settlement_diagnostics(
+                self.manifest,
+                db_path=self.db_path,
+                probe_fetch=True,
+                scraper_url=self.scraper_url,
+            )
+            quality = build_wave_quality_report(
+                self.manifest,
+                db_path=self.db_path,
+                diagnostics=diagnostics,
+            )
         payload: Dict[str, Any] = {
             "wave": self._wave_meta(),
             "accumulate": accumulate,
@@ -162,6 +249,10 @@ class EvalWaveRunner:
             "predictions": predictions_to_json(prediction_views),
             "prediction_views": prediction_views,
         }
+        if diagnostics is not None:
+            payload["settlement_diagnostics"] = diagnostics
+        if quality is not None:
+            payload["quality_report"] = quality
 
         output_paths: Dict[str, str] = {}
         if write_artifacts:
@@ -171,6 +262,14 @@ class EvalWaveRunner:
                 payload,
                 output_dir=self.output_dir,
             )
+            if include_diagnostics and diagnostics is not None:
+                diag_paths = write_diagnostics_artifacts(
+                    self.manifest,
+                    diagnostics,
+                    quality,
+                    output_dir=self.output_dir,
+                )
+                output_paths.update(diag_paths)
             payload["output_paths"] = output_paths
 
         payload["cli_summary"] = build_wave_cli_summary(
@@ -180,6 +279,7 @@ class EvalWaveRunner:
             settlement=settlement,
             coverage_report=coverage,
             calibration=calibration,
+            quality_report=quality,
             output_paths=output_paths or None,
         )
         return payload
@@ -249,3 +349,28 @@ class EvalWaveRunner:
             "output_paths": output_paths,
             "payload": payload,
         }
+
+
+def _format_audit_cli_summary(
+    manifest: EvalWaveManifest,
+    diagnostics: Dict[str, Any],
+    quality: Dict[str, Any],
+    settlement: Dict[str, Any],
+) -> str:
+    summary = diagnostics.get("summary") or {}
+    coverage = quality.get("coverage") or {}
+    lines = [
+        f"Wave audit: {manifest.label}",
+        f"- saved runs: {summary.get('total_saved_runs')}",
+        f"- match_results in wave dates: {summary.get('match_results_rows_in_wave_dates')}",
+        f"- settled evaluable: {settlement.get('settled_evaluable')}",
+        f"- unresolved: {settlement.get('unsettled')}",
+        f"- hit rate: {settlement.get('hit_rate')}",
+        f"- settled coverage: {coverage.get('settled_coverage')}",
+    ]
+    blocker = diagnostics.get("blocker_analysis") or {}
+    if blocker.get("message"):
+        lines.append(f"- blocker: {blocker['message']}")
+    for bullet in quality.get("weak_spots") or []:
+        lines.append(f"  • {bullet}")
+    return "\n".join(lines)

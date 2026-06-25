@@ -13,6 +13,9 @@ BUILTIN_PRESETS: Dict[str, str] = {
     "june18_21_first_batch": str(
         PACKAGE_ROOT / "data" / "eval_waves" / "june18_21_first_batch.json",
     ),
+    "june25_28_wave": str(
+        PACKAGE_ROOT / "data" / "eval_waves" / "june25_28_wave.json",
+    ),
 }
 
 

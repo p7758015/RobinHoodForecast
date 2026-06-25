@@ -191,11 +191,15 @@ def _rotation_tendency(
 
 
 def _coach_vs_opponent_coach_score(brave: Optional[CoachContextBlock]) -> float:
-    if brave is None or not brave.coach_h2h_total_matches:
+    if brave is None:
         return 0.5
-    total = max(1, int(brave.coach_h2h_total_matches))
-    hw = int(brave.coach_h2h_home_wins or 0)
-    aw = int(brave.coach_h2h_away_wins or 0)
+    stat = brave.stat
+    total = stat.coach_h2h_total_matches or brave.coach_h2h_total_matches
+    if not total:
+        return 0.5
+    total_n = max(1, int(total))
+    hw = int(stat.coach_h2h_home_wins or brave.coach_h2h_home_wins or 0)
+    aw = int(stat.coach_h2h_away_wins or brave.coach_h2h_away_wins or 0)
     if hw + aw == 0:
         return 0.5
     edge = (hw - aw) / (hw + aw)
@@ -228,15 +232,17 @@ def coach_context_from_merged(
 
     if brave is not None:
         if side == "home":
-            if brave.home_coach_name and name in ("Unknown", ""):
-                name = brave.home_coach_name
-            days_in_charge = brave.home_coach_tenure_days
-            status = str(brave.home_coach_status or "unknown")
+            news_name = brave.news.home_coach_name or brave.home_coach_name
+            if news_name and name in ("Unknown", ""):
+                name = news_name
+            days_in_charge = brave.stat.home_coach_tenure_days or brave.home_coach_tenure_days
+            status = str(brave.news.home_coach_status or brave.home_coach_status or "unknown")
         else:
-            if brave.away_coach_name and name in ("Unknown", ""):
-                name = brave.away_coach_name
-            days_in_charge = brave.away_coach_tenure_days
-            status = str(brave.away_coach_status or "unknown")
+            news_name = brave.news.away_coach_name or brave.away_coach_name
+            if news_name and name in ("Unknown", ""):
+                name = news_name
+            days_in_charge = brave.stat.away_coach_tenure_days or brave.away_coach_tenure_days
+            status = str(brave.news.away_coach_status or brave.away_coach_status or "unknown")
 
     if oc_side is not None:
         if oc_side.coach_name and name in ("Unknown", ""):
@@ -274,6 +280,14 @@ def coach_context_from_merged(
         status=status,
     )
 
+    profile = (brave.profile_home if side == "home" else brave.profile_away) if brave else None
+    if profile is not None and profile.coach_global_strength_score:
+        global_strength = clip01(
+            0.65 * global_strength + 0.35 * float(profile.coach_global_strength_score),
+        )
+
+    previous_teams = list(profile.previous_teams or []) if profile else []
+
     kickoff_date = None
     if merged.flashscore_facts.meta.kickoff_utc:
         kickoff_date = merged.flashscore_facts.meta.kickoff_utc.date()
@@ -290,6 +304,7 @@ def coach_context_from_merged(
         coach_global_strength_score=global_strength,
         coach_vs_opponent_team_score=global_strength,
         coach_vs_opponent_coach_score=_coach_vs_opponent_coach_score(brave),
+        previous_teams=previous_teams,
         coach_rotation_tendency_score=_rotation_tendency(
             brave=brave,
             side=side,
@@ -319,6 +334,8 @@ def coaches_confidence_from_context(
 
     if brave is not None and brave.coach_news_confidence:
         conf = max(conf, clip01(brave.coach_news_confidence))
+    if brave is not None and brave.news and brave.news.coach_news_confidence:
+        conf = max(conf, clip01(brave.news.coach_news_confidence))
 
     tenure_signals = sum(
         1

@@ -7,6 +7,8 @@ Examples::
   python -m football_agent.debug.eval_wave_runner list-wave-predictions --preset june18_21_first_batch
   python -m football_agent.debug.eval_wave_runner show-run --run-id <uuid> --db-path football_agent/data/football_agent.db
   python -m football_agent.debug.eval_wave_runner report-wave --preset june18_21_first_batch
+  python -m football_agent.debug.eval_wave_runner diagnose-wave --preset june18_21_first_batch
+  python -m football_agent.debug.eval_wave_runner audit-wave --preset june18_21_first_batch
   python -m football_agent.debug.eval_wave_runner full-wave --preset june18_21_first_batch
   python -m football_agent.debug.eval_wave_runner accumulate-wave --preset june18_21_first_batch
 """
@@ -88,9 +90,16 @@ def _cmd_update_results(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print("Update results done")
+        print(f"- pipeline: {result.get('pipeline')}")
+        print(f"- fixtures in scope / in range: {result.get('fixtures_in_scope')} / {result.get('fixtures_in_range', '—')}")
         print(f"- results saved: {result.get('results_saved')}")
         print(f"- finished in scope: {result.get('finished_in_scope')}")
         print(f"- not finished: {result.get('skipped_not_finished')}")
+        if result.get("result_source_diagnostics"):
+            rsd = result["result_source_diagnostics"]
+            print(f"- result source blocker: {rsd.get('primary_blocker')}")
+            print(f"- fixtures returned / in-range: {rsd.get('fixtures_returned')} / {rsd.get('in_range_fixtures')}")
+            print(f"- detail probes: {rsd.get('detail_probes_attempted')} (confirmed {rsd.get('detail_finished_confirmed')})")
     return 0
 
 
@@ -109,11 +118,63 @@ def _cmd_settle(args: argparse.Namespace) -> int:
 
 def _cmd_report(args: argparse.Namespace) -> int:
     runner = _runner_from_args(args)
-    result = runner.report_wave(write_artifacts=not args.no_artifacts)
+    result = runner.report_wave(
+        write_artifacts=not args.no_artifacts,
+        include_diagnostics=bool(args.diagnostics),
+    )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(result.get("cli_summary") or "Report complete")
+    return 0
+
+
+def _cmd_diagnose(args: argparse.Namespace) -> int:
+    runner = _runner_from_args(args)
+    result = runner.diagnose_wave(
+        write_artifacts=not args.no_artifacts,
+        probe_fetch=not args.no_probe,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    else:
+        diag = result.get("diagnostics") or {}
+        summary = diag.get("summary") or {}
+        blocker = diag.get("blocker_analysis") or {}
+        print(f"Diagnose wave: {runner.manifest.label}")
+        print(f"- saved runs: {summary.get('total_saved_runs')}")
+        print(f"- match_results in wave: {summary.get('match_results_rows_in_wave_dates')}")
+        print(f"- unresolved: {summary.get('unresolved_count')} ({summary.get('unresolved_share')})")
+        print(f"- join exact/normalized/unresolved: "
+              f"{summary.get('join_exact_count')}/{summary.get('join_normalized_count')}/{summary.get('join_unresolved_count')}")
+        if blocker.get("message"):
+            print(f"- blocker: {blocker['message']}")
+        buckets = diag.get("unresolved_reason_buckets") or {}
+        if buckets:
+            print("- reason buckets:")
+            for reason, count in sorted(buckets.items(), key=lambda x: -x[1]):
+                print(f"    {reason}: {count}")
+        if result.get("output_paths"):
+            print("")
+            for k, v in result["output_paths"].items():
+                print(f"{k}: {v}")
+    return 0
+
+
+def _cmd_audit(args: argparse.Namespace) -> int:
+    runner = _runner_from_args(args)
+    result = runner.audit_wave(
+        write_artifacts=not args.no_artifacts,
+        probe_fetch=not args.no_probe,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(result.get("cli_summary") or "Audit complete")
+        if result.get("output_paths"):
+            print("")
+            for k, v in result["output_paths"].items():
+                print(f"{k}: {v}")
     return 0
 
 
@@ -191,17 +252,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ("update-results", _cmd_update_results),
         ("settle-wave", _cmd_settle),
         ("report-wave", _cmd_report),
+        ("diagnose-wave", _cmd_diagnose),
+        ("audit-wave", _cmd_audit),
         ("full-wave", _cmd_full),
         ("list-wave-predictions", _cmd_list_predictions),
         ("cleanup-wave", _cmd_cleanup),
     ):
         p = sub.add_parser(name, help=handler.__doc__ or name)
         _add_wave_args(p)
-        if name in ("report-wave", "full-wave"):
+        if name in ("report-wave", "full-wave", "diagnose-wave", "audit-wave"):
             p.add_argument(
                 "--no-artifacts",
                 action="store_true",
                 help="Skip writing JSON/markdown files to data/eval_wave_reports/.",
+            )
+        if name == "report-wave":
+            p.add_argument(
+                "--diagnostics",
+                action="store_true",
+                help="Include settlement diagnostics + quality snapshot in report artifacts.",
+            )
+        if name in ("diagnose-wave", "audit-wave"):
+            p.add_argument(
+                "--no-probe",
+                action="store_true",
+                help="Skip read-only discovery probe (DB-only diagnostics).",
             )
         if name == "list-wave-predictions":
             p.add_argument(

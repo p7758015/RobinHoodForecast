@@ -247,8 +247,62 @@ def enrich_http_flashscore_raw(raw: Dict[str, Any]) -> Dict[str, Any]:
                 "away_position": out.get("away_position"),
                 "home_points": out.get("home_points"),
                 "away_points": out.get("away_points"),
+                "home_goal_difference": out.get("home_goal_difference"),
+                "away_goal_difference": out.get("away_goal_difference"),
+                "home_matches_played": out.get("home_matches_played"),
+                "away_matches_played": out.get("away_matches_played"),
             }
             warnings.append("standings_mapped_from_flat_fields")
+    else:
+        st = dict(out.get("standings") or {})
+        for key in (
+            "home_position",
+            "away_position",
+            "home_points",
+            "away_points",
+            "home_goal_difference",
+            "away_goal_difference",
+            "home_matches_played",
+            "away_matches_played",
+        ):
+            if st.get(key) is None and out.get(key) is not None:
+                st[key] = out.get(key)
+                warnings.append(f"standings_backfilled_{key}")
+        if st:
+            out["standings"] = st
+
+    # schedule_raw: flat schedule fields from dsof/network parser
+    if not schedule_has_signal(out.get("schedule_raw")):
+        sched = {
+            "previous_match_date_home": out.get("previous_match_date_home"),
+            "previous_match_date_away": out.get("previous_match_date_away"),
+            "next_match_date_home": out.get("next_match_date_home"),
+            "next_match_date_away": out.get("next_match_date_away"),
+            "recent_match_dates_home": out.get("recent_match_dates_home") or [],
+            "recent_match_dates_away": out.get("recent_match_dates_away") or [],
+        }
+        if schedule_has_signal(sched):
+            out["schedule_raw"] = sched
+            warnings.append("schedule_mapped_from_flat_fields")
+
+    # form: ensure home/away venue splits are preserved when nested block exists
+    form_val = out.get("form")
+    if isinstance(form_val, dict):
+        for side in ("home", "away"):
+            block = form_val.get(side)
+            if not isinstance(block, dict):
+                continue
+            prefix = f"{side}_"
+            for suffix, target in (
+                ("home_only_form", "home_only_form"),
+                ("away_only_form", "away_only_form"),
+                ("goals_for_last_n", "goals_for_last_n"),
+                ("goals_against_last_n", "goals_against_last_n"),
+            ):
+                flat_key = f"{prefix}{suffix}"
+                if block.get(target) is None and out.get(flat_key) is not None:
+                    block[target] = out.get(flat_key)
+                    warnings.append(f"form_backfilled_{flat_key}")
 
     # season_context from round/matchday hints
     if not season_context_has_signal(out.get("season_context")):

@@ -47,6 +47,31 @@ def test_enrich_maps_flat_standings() -> None:
     assert raw["standings"]["home_position"] == 3
 
 
+def test_enrich_maps_schedule_flat_fields() -> None:
+    from football_agent.flashscore.raw_enrich import schedule_has_signal
+
+    raw = enrich_http_flashscore_raw(
+        {
+            "previous_match_date_home": "2026-06-10",
+            "recent_match_dates_home": ["2026-06-10", "2026-06-05"],
+        },
+    )
+    assert schedule_has_signal(raw["schedule_raw"])
+    assert raw["schedule_raw"]["previous_match_date_home"] == "2026-06-10"
+
+
+def test_enrich_backfills_standings_points_from_flat() -> None:
+    raw = enrich_http_flashscore_raw(
+        {
+            "standings": {"home_position": 2, "away_position": 9},
+            "home_points": 18,
+            "home_goal_difference": 4,
+        },
+    )
+    assert raw["standings"]["home_points"] == 18
+    assert raw["standings"]["home_goal_difference"] == 4
+
+
 def test_stub_zeros_not_counted_as_signal() -> None:
     signals = assess_block_signals(
         {

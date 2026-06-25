@@ -225,6 +225,9 @@ def schedule_context_from_raw(
 
     days_since = (ref - prev_date).days if prev_date else None
     days_to = (next_date - ref).days if next_date else None
+    if days_to is not None and days_to < 0:
+        # Next fixture date is before/at kickoff (stale GraphQL "next" or TZ drift).
+        days_to = None
 
     matches_14 = sum(1 for d in recent_dates if 0 <= (ref - d).days <= 14)
     if prev_date and prev_date not in recent_dates:

@@ -91,6 +91,11 @@ class CompetitionRefV2(V2IngestModel):
     name: str
     country: Optional[str] = None
     tournament_type: TournamentType = TournamentType.LEAGUE_REGULAR
+    competition_family: Optional[str] = None
+    competition_subtype: Optional[str] = None
+    is_women: bool = False
+    is_youth: bool = False
+    is_reserve: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +121,11 @@ class MatchMetaV2(V2IngestModel):
     season_progress: float = Field(ge=0.0, le=1.0, default=0.0)
     rounds_played: Optional[int] = None
     rounds_remaining: Optional[int] = None
+    competition_family: Optional[str] = None
+    competition_subtype: Optional[str] = None
+    is_women: bool = False
+    is_youth: bool = False
+    is_reserve: bool = False
 
 
 # ---------------------------------------------------------------------------

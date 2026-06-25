@@ -12,11 +12,29 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from football_agent import config
+from football_agent.news_context.source_reliability import hit_rank_key
+from football_agent.news_context.team_scope import build_team_scope
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.search.brave.com/res/v1/web/search"
 MAX_RETRIES = 2
+
+# Brave API rejects bare ISO-639-1 codes for some locales (e.g. pt → use pt-br).
+_BRAVE_SEARCH_LANG_ALIASES = {
+    "pt": "pt-br",
+    "pt_br": "pt-br",
+    "pt-pt": "pt-pt",
+    "zh": "zh-hans",
+    "ja": "jp",
+}
+
+
+def normalize_brave_search_lang(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    lang = value.strip().lower().replace("_", "-")
+    return _BRAVE_SEARCH_LANG_ALIASES.get(lang, lang)
 
 
 class BraveSearchError(Exception):
@@ -66,6 +84,8 @@ class BraveSearchClient:
         count: Optional[int] = None,
         freshness_hours: Optional[int] = None,
         topic_tag: Optional[str] = None,
+        country: Optional[str] = None,
+        search_lang: Optional[str] = None,
     ) -> List[BraveSearchHit]:
         if not self._api_key:
             raise BraveSearchUnavailableError("BRAVE_SEARCH_API_KEY is not set")
@@ -85,6 +105,12 @@ class BraveSearchClient:
                 params["freshness"] = "pw"
             else:
                 params["freshness"] = "pm"
+        if country:
+            params["country"] = country.strip().upper()
+        if search_lang:
+            normalized = normalize_brave_search_lang(search_lang)
+            if normalized:
+                params["search_lang"] = normalized
 
         headers = {
             "Accept": "application/json",
@@ -104,7 +130,15 @@ class BraveSearchClient:
                     raise BraveSearchUnavailableError(
                         f"Brave HTTP {resp.status_code}: {resp.text[:300]}",
                     )
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except ValueError as exc:
+                    ctype = (resp.headers.get("content-type") or "").lower()
+                    body = (resp.text or "").strip()
+                    raise BraveSearchUnavailableError(
+                        f"Brave non-JSON HTTP {resp.status_code} "
+                        f"content-type={ctype or 'unknown'} body={body[:160]!r}: {exc}",
+                    ) from exc
                 return self._parse_results(data, topic_tag=topic_tag)
             except (requests.RequestException, BraveSearchUnavailableError, BraveSearchError) as exc:
                 last_exc = exc
@@ -185,22 +219,40 @@ def filter_hits_by_lookback(
     lookback_hours: int,
     home_team: str,
     away_team: str,
+    competition_country: Optional[str] = None,
 ) -> List[BraveSearchHit]:
     """Drop stale or obviously irrelevant hits (fail-soft)."""
     if not hits:
         return []
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, lookback_hours))
-    home_l = home_team.lower()
-    away_l = away_team.lower()
+    scope = build_team_scope(home_team, away_team, competition_country=competition_country)
 
     filtered: List[BraveSearchHit] = []
     for h in hits:
-        text = f"{h.title} {h.description or ''}".lower()
-        if home_l not in text and away_l not in text:
-            # coach-only articles may mention one team — keep if coach tag
-            if "coach" not in h.topic_tags and "h2h" not in h.topic_tags:
+        text = f"{h.title} {h.description or ''}"
+        from football_agent.news_context.team_scope import classify_ownership
+
+        own = classify_ownership(text, scope)
+        if own.side == "unassigned":
+            relaxed = {"coach", "h2h", "preview", "injuries", "lineup", "rotation"}
+            if not any(t in (h.topic_tags or []) for t in relaxed):
                 continue
+            continue
         if h.published_at and h.published_at < cutoff:
             continue
         filtered.append(h)
     return filtered
+
+
+def rank_and_cap_hits(hits: List[BraveSearchHit], *, max_count: int) -> List[BraveSearchHit]:
+    """Deterministic ordering: trusted sources + injury/coach tags survive cap."""
+    ordered = sorted(
+        hits,
+        key=lambda h: hit_rank_key(
+            url=h.url,
+            source_name=h.source_name,
+            title=h.title,
+            topic_tag=(h.topic_tags[0] if h.topic_tags else None),
+        ),
+    )
+    return ordered[:max_count]

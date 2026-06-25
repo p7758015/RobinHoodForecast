@@ -8,10 +8,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from football_agent.domain.enums_v2 import AvailabilityStatus, PlayerImportance
 from football_agent.domain.models_v2 import PlayerAvailabilityV2, PlayerRefV2, SquadContextV2, TeamRefV2
 from football_agent.flashscore.models import FlashscoreSquadRaw
+from football_agent.news_context.coach_normalize import fold_text
+from football_agent.news_context.factor_mapping import extract_player_hint_from_signal
 from football_agent.news_context.models import GeneralNewsBlock, MatchNewsContext
 
 _KEY_ROLE_PATTERNS: List[Tuple[re.Pattern[str], PlayerImportance]] = [
-    (re.compile(r"\b(gk|goalkeeper|keeper)\b", re.I), PlayerImportance.CRITICAL),
+    (re.compile(r"\b(gk|goalkeeper|keeper|goleir[oa])\b", re.I), PlayerImportance.CRITICAL),
     (re.compile(r"\b(cb|centre.?back|center.?back|defender|defence)\b", re.I), PlayerImportance.HIGH),
     (re.compile(r"\b(dm|defensive.?mid|midfield.?anchor)\b", re.I), PlayerImportance.HIGH),
     (re.compile(r"\b(striker|forward|cf|centre.?forward|center.?forward)\b", re.I), PlayerImportance.HIGH),
@@ -29,6 +31,8 @@ _STATUS_ALIASES: Dict[str, AvailabilityStatus] = {
     "suspended": AvailabilityStatus.SUSPENDED,
     "suspension": AvailabilityStatus.SUSPENDED,
     "ban": AvailabilityStatus.SUSPENDED,
+    "suspenso": AvailabilityStatus.SUSPENDED,
+    "suspensão": AvailabilityStatus.SUSPENDED,
     "available": AvailabilityStatus.AVAILABLE,
 }
 
@@ -217,52 +221,93 @@ def _news_hints_for_side(
     side: str,
     home_team: str,
     away_team: str,
-) -> Tuple[List[PlayerAvailabilityV2], List[PlayerAvailabilityV2], List[str]]:
+) -> Tuple[List[PlayerAvailabilityV2], List[PlayerAvailabilityV2], List[str], List[PlayerAvailabilityV2]]:
     """Brave injury/suspension/lineup hints — counts and role mentions only, no fake names."""
     if news is None or news.general_news is None:
-        return [], [], []
+        return [], [], [], []
 
     gn: GeneralNewsBlock = news.general_news
     team_name = home_team if side == "home" else away_team
-    team_lower = team_name.lower()
 
     role_notes: List[str] = []
     doubtful: List[PlayerAvailabilityV2] = []
     missing: List[PlayerAvailabilityV2] = []
+    suspended_from_news: List[PlayerAvailabilityV2] = []
 
-    def _signal_belongs_to_side(text: str) -> bool:
-        lower = text.lower()
-        if team_lower and team_lower in lower:
+    injury_signals = (
+        list(gn.home_injuries_signals or []) if side == "home" else list(gn.away_injuries_signals or [])
+    )
+    suspension_signals = (
+        list(gn.home_suspension_signals or []) if side == "home" else list(gn.away_suspension_signals or [])
+    )
+
+    def _text_mentions_team(text: str, team: str) -> bool:
+        folded = fold_text(text)
+        team_fold = fold_text(team)
+        tokens = {team_fold}
+        for part in team_fold.replace("-", " ").split():
+            if len(part) >= 4:
+                tokens.add(part)
+        return any(tok and tok in folded for tok in tokens)
+
+    def _signal_belongs_to_side(text: str, team: str, home: str, away: str) -> bool:
+        if _text_mentions_team(text, team):
             return True
-        # Generic squad signal without opponent mention — apply to both sides conservatively
-        if home_team.lower() not in lower and away_team.lower() not in lower:
+        if not _text_mentions_team(text, home) and not _text_mentions_team(text, away):
             return True
         return False
 
-    for signal in list(gn.injuries_signals or []) + list(gn.suspension_signals or []):
+    if not injury_signals and not suspension_signals:
+        injury_signals = [
+            s for s in (gn.injuries_signals or [])
+            if _signal_belongs_to_side(str(s), team_name, home_team, away_team)
+        ]
+        suspension_signals = [
+            s for s in (gn.suspension_signals or [])
+            if _signal_belongs_to_side(str(s), team_name, home_team, away_team)
+        ]
+
+    for signal in injury_signals + suspension_signals:
         text = str(signal).strip()
-        if not text or not _signal_belongs_to_side(text):
+        if not text:
             continue
         role_notes.append(text)
         status = (
             AvailabilityStatus.SUSPENDED
-            if any(w in text.lower() for w in ("suspend", "ban", "red card"))
+            if any(
+                w in fold_text(text)
+                for w in ("suspend", "ban", "red card", "suspenso", "suspens", "cartao amarelo")
+            )
             else AvailabilityStatus.INJURED
         )
-        importance = _importance_from_text(text)
-        missing.append(
-            _availability_from_entry(
-                f"news_hint:{text[:48]}",
-                status,
-                importance,
-                text,
-                clip01((news.confidence or 0.35) * 0.85),
-            ),
+        player_name, role_hint = extract_player_hint_from_signal(text)
+        if player_name and player_name.lower().split()[0] in {
+            "arqueiro", "amarelo", "estão", "estao", "recebeu", "cartão", "cartao",
+        }:
+            player_name = None
+        if any(w in fold_text(text) for w in ("suspenso", "suspens", "suspended", "suspension")):
+            status = AvailabilityStatus.SUSPENDED
+        if status == AvailabilityStatus.SUSPENDED and not player_name:
+            continue
+        importance = _importance_from_text(text, role_hint or "")
+        if role_hint == "goalkeeper":
+            importance = PlayerImportance.CRITICAL
+        display_name = player_name or f"news_hint:{text[:48]}"
+        entry = _availability_from_entry(
+            display_name,
+            status,
+            importance,
+            text,
+            clip01((news.confidence or 0.35) * 0.85),
         )
+        if status == AvailabilityStatus.SUSPENDED:
+            suspended_from_news.append(entry)
+        else:
+            missing.append(entry)
 
     for signal in list(gn.predicted_lineup_signals or []):
         text = str(signal).strip()
-        if not text or not _signal_belongs_to_side(text):
+        if not text or not _signal_belongs_to_side(text, team_name, home_team, away_team):
             continue
         if any(w in text.lower() for w in ("doubt", "uncertain", "fitness", "late")):
             role_notes.append(text)
@@ -276,7 +321,7 @@ def _news_hints_for_side(
                 ),
             )
 
-    return missing, doubtful, role_notes
+    return missing, doubtful, role_notes, suspended_from_news
 
 
 def squad_context_from_raw(
@@ -289,7 +334,43 @@ def squad_context_from_raw(
     away_team: str = "",
 ) -> SquadContextV2:
     if squad is None:
-        return SquadContextV2(team=team_ref, starting_xi_confidence=0.2, line_stability_score=0.35)
+        news_missing, news_doubtful, _, news_suspended = _news_hints_for_side(
+            news_context,
+            side=side,
+            home_team=home_team,
+            away_team=away_team,
+        )
+        if not news_missing and not news_doubtful and not news_suspended:
+            return SquadContextV2(team=team_ref, starting_xi_confidence=0.2, line_stability_score=0.35)
+
+        missing_entries = list(news_missing)
+        doubtful = list(news_doubtful)
+        suspended = list(news_suspended)
+        missing_count = len(missing_entries)
+        doubtful_count = len(doubtful)
+        suspended_count = len(suspended)
+        key_missing = _count_key_absences(missing_entries, suspended, doubtful)
+        signal_confidence = clip01((news_context.confidence or 0.35) * 0.9) if news_context else 0.35
+        key_impact = _key_absence_impact_score(
+            missing_entries, suspended, doubtful, signal_confidence=signal_confidence,
+        )
+        xi_conf = max(0.12, 0.2 - min(0.12, 0.04 * key_missing))
+        line_stab = max(0.15, 0.35 - min(0.12, 0.04 * key_missing))
+        avail = _availability_score(
+            xi_conf, line_stab, missing_count, key_missing, doubtful_count, key_impact,
+        )
+        return SquadContextV2(
+            team=team_ref,
+            missing_players=missing_entries,
+            suspended_players=suspended,
+            doubtful_players=doubtful,
+            missing_players_count=missing_count,
+            missing_key_players_count=key_missing,
+            starting_xi_confidence=clip01(xi_conf),
+            line_stability_score=clip01(line_stab),
+            availability_score=avail,
+            key_absence_impact_score=key_impact,
+        )
 
     confirmed_names = list((squad.confirmed_lineups or {}).get(side) or [])
     predicted_names = list((squad.predicted_lineups or {}).get(side) or [])
@@ -314,7 +395,7 @@ def squad_context_from_raw(
 
     status_missing, suspended, doubtful = _parse_side_status_map(squad.player_status_raw or {}, side)
 
-    news_missing, news_doubtful, _role_notes = _news_hints_for_side(
+    news_missing, news_doubtful, _role_notes, news_suspended = _news_hints_for_side(
         news_context,
         side=side,
         home_team=home_team,
@@ -324,6 +405,7 @@ def squad_context_from_raw(
     missing_entries = _merge_availability_lists(missing_entries, news_missing)
     doubtful = _merge_availability_lists(doubtful, doubtful_from_raw)
     doubtful = _merge_availability_lists(doubtful, news_doubtful)
+    suspended = _merge_availability_lists(suspended, news_suspended)
 
     missing_count = len(missing_entries)
     doubtful_count = len(doubtful)

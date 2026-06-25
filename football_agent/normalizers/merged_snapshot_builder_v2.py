@@ -36,6 +36,7 @@ from football_agent.normalizers.flashscore_snapshot_helpers import (
     squad_context_from_raw,
     news_rotation_hint,
 )
+from football_agent.domain.competition_family import resolve_competition_identity
 from football_agent.domain.models_v2 import (
     CompetitionRefV2,
     MatchAnalysisSnapshotV2,
@@ -115,12 +116,20 @@ class MergedSnapshotBuilderV2:
         season_phase = _map_season_phase(derived.season_phase)
         season_progress = _compute_season_progress(facts)
 
-        comp_code = _competition_code_from_flashscore(facts.meta.competition_name)
+        comp_code, family_meta = resolve_competition_identity(
+            facts.meta.competition_name,
+            facts.meta.competition_country,
+        )
         comp = CompetitionRefV2(
             competition_code=comp_code,
             name=facts.meta.competition_name,
             country=facts.meta.competition_country,
             tournament_type=tt,
+            competition_family=family_meta.family.value,
+            competition_subtype=family_meta.subtype,
+            is_women=family_meta.is_women,
+            is_youth=family_meta.is_youth,
+            is_reserve=family_meta.is_reserve,
         )
 
         match_meta = MatchMetaV2(
@@ -141,6 +150,11 @@ class MergedSnapshotBuilderV2:
             season_progress=season_progress,
             rounds_played=_safe_int(getattr(facts.season_context_inputs, "matchday_number", None)),
             rounds_remaining=derived.rounds_remaining_after_this_match,
+            competition_family=family_meta.family.value,
+            competition_subtype=family_meta.subtype,
+            is_women=family_meta.is_women,
+            is_youth=family_meta.is_youth,
+            is_reserve=family_meta.is_reserve,
         )
 
         rotation_hint = news_rotation_hint(merged)
@@ -164,10 +178,22 @@ class MergedSnapshotBuilderV2:
         )
 
         home_team_ctx = _team_context_from_flashscore(
-            facts, derived, side="home", team_ref=home_team, kickoff=kickoff_dt, squad=home_squad
+            facts,
+            derived,
+            side="home",
+            team_ref=home_team,
+            kickoff=kickoff_dt,
+            squad=home_squad,
+            news_context=merged.news_context,
         )
         away_team_ctx = _team_context_from_flashscore(
-            facts, derived, side="away", team_ref=away_team, kickoff=kickoff_dt, squad=away_squad
+            facts,
+            derived,
+            side="away",
+            team_ref=away_team,
+            kickoff=kickoff_dt,
+            squad=away_squad,
+            news_context=merged.news_context,
         )
 
         home_coach = coach_context_from_merged(merged, home_team, side="home")
@@ -269,13 +295,10 @@ def _team_ref_from_name(name: str, *, side: str, notes: Dict[str, str]) -> TeamR
 
 
 def _competition_code_from_flashscore(name: str) -> str:
-    # Snapshot requires a competition_code; keep deterministic and simple.
-    # Not canonical: just a compatibility code.
-    if not name:
-        return "FS"
-    slug = "_".join(re.sub(r"[^a-zA-Z0-9]+", " ", name).strip().split())
-    slug = slug[:20] if slug else "FS"
-    return f"FS_{slug}".upper()
+    """Deprecated slug helper — prefer ``resolve_competition_identity``."""
+    from football_agent.domain.competition_family import competition_code_slug
+
+    return competition_code_slug(name)
 
 
 def _map_season_phase(phase: Optional[str]) -> Optional[SeasonPhase]:
@@ -310,10 +333,20 @@ def _team_context_from_flashscore(
     team_ref: TeamRefV2,
     kickoff: datetime,
     squad: SquadContextV2,
+    news_context=None,
 ) -> TeamContextV2:  # noqa: ANN001
+    from football_agent.news_context.factor_mapping import apply_brave_motivation_bias
+
     standings = facts.standings
     form_block = form_block_from_flashscore(facts.form, side=side)
     motivation_block = motivation_block_from_derived(derived, standings, side=side)
+    motivation_block = apply_brave_motivation_bias(
+        motivation_block,
+        news_context,
+        side=side,
+        home_team=facts.meta.home_team_name,
+        away_team=facts.meta.away_team_name,
+    )
     schedule_mini = schedule_mini_from_raw(facts.schedule_raw, kickoff, side=side)
 
     baseline = 0.5
@@ -321,6 +354,9 @@ def _team_context_from_flashscore(
         pos = standings.home_position if side == "home" else standings.away_position
         if pos and pos > 0:
             baseline = max(0.15, min(0.85, 1.0 - (pos - 1) / 19.0))
+        gd = standings.home_goal_difference if side == "home" else standings.away_goal_difference
+        if gd is not None:
+            baseline = max(0.15, min(0.85, baseline + max(-0.05, min(0.05, gd / 25.0))))
 
     return TeamContextV2(
         team=team_ref,

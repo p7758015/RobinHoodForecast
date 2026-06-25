@@ -28,6 +28,10 @@ STATIC_COMPETITION_ALIASES: Dict[str, Tuple[str, Optional[str]]] = {
     "brazil serie b": ("Serie B", "Brazil"),
     "serie b brazil": ("Serie B", "Brazil"),
     "brasileirao serie b": ("Serie B", "Brazil"),
+    "ireland premier division": ("Premier Division", "Ireland"),
+    "league of ireland": ("Premier Division", "Ireland"),
+    "premier division ireland": ("Premier Division", "Ireland"),
+    "ireland premier": ("Premier Division", "Ireland"),
 }
 
 

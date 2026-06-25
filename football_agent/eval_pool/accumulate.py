@@ -34,6 +34,11 @@ from football_agent.eval_pool.scope import LOW_CONFIDENCE_THRESHOLD, LeaguePoolE
 
 from football_agent.flashscore.models import FlashscoreMeta
 
+from football_agent.competition_family_policy import (
+    EvalPoolFamilyMode,
+    eval_pool_family_allowed,
+)
+from football_agent.domain.competition_family import CompetitionFamily, family_for_registry_code
 from football_agent.services.competition_classifier import classify_competition_meta
 
 from football_agent.services.live_flashscore_pipeline import LiveFlashscorePipeline, LivePipelineResult
@@ -136,6 +141,12 @@ def _empty_summary(*, date_from: str, date_to: str, league_keys: Sequence[str]) 
 
         "parked_or_non_league_skipped": 0,
 
+        "competition_family_skipped": 0,
+
+        "competition_family_breakdown": {},
+
+        "eval_pool_family_mode": None,
+
         "out_of_scope_skipped": 0,
 
         "runs_with_odds": 0,
@@ -171,7 +182,19 @@ def _fixture_dedupe_key(raw: dict) -> Tuple[str, str, str]:
     return (mid or f"{home}:{away}", home, away)
 
 
-
+def _family_mode_for_pool_entries(entries: Sequence[LeaguePoolEntry]) -> EvalPoolFamilyMode:
+    mode = EvalPoolFamilyMode.MEN_SENIOR_ONLY
+    for entry in entries:
+        fam = family_for_registry_code(entry.registry_code)
+        if fam == CompetitionFamily.WOMEN_SENIOR_LEAGUE:
+            mode |= EvalPoolFamilyMode.INCLUDE_WOMEN
+        elif fam == CompetitionFamily.YOUTH_UXX:
+            mode |= EvalPoolFamilyMode.INCLUDE_YOUTH
+        elif fam == CompetitionFamily.RESERVES:
+            mode |= EvalPoolFamilyMode.INCLUDE_RESERVES
+        elif fam == CompetitionFamily.OTHER_SPECIAL:
+            mode |= EvalPoolFamilyMode.INCLUDE_SPECIAL
+    return mode
 
 
 def accumulate_league_pool(
@@ -200,6 +223,8 @@ def accumulate_league_pool(
 
     expected_matches: Optional[int] = None,
 
+    eval_pool_family_mode: Optional[EvalPoolFamilyMode] = None,
+
 ) -> Dict[str, Any]:
 
     """
@@ -220,6 +245,8 @@ def accumulate_league_pool(
 
     keys = tuple(e.key for e in pool_entries)
 
+    family_mode = eval_pool_family_mode or _family_mode_for_pool_entries(pool_entries)
+
     fallback = (
 
         use_discovery_fallback
@@ -235,6 +262,8 @@ def accumulate_league_pool(
     summary["use_discovery_fallback"] = fallback
 
     summary["expected_matches"] = expected_matches
+
+    summary["eval_pool_family_mode"] = str(family_mode)
 
     competitions_seen: set[str] = set()
 
@@ -429,6 +458,21 @@ def accumulate_league_pool(
                 )
 
                 comp_country = raw.get("competition_country") or (entry.countries[0].title() if entry.countries else None)
+
+                family_decision = eval_pool_family_allowed(
+                    competition_code=None,
+                    competition_name=comp_name,
+                    competition_country=str(comp_country) if comp_country else None,
+                    pool_registry_code=entry.registry_code,
+                    mode=family_mode,
+                )
+                fam_key = family_decision.family.value
+                summary["competition_family_breakdown"][fam_key] = (
+                    summary["competition_family_breakdown"].get(fam_key, 0) + 1
+                )
+                if not family_decision.allowed:
+                    summary["competition_family_skipped"] += 1
+                    continue
 
                 if not raw.get("_discovery_source"):
 

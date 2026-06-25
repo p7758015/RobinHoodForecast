@@ -72,7 +72,16 @@ OPENCLAW_CAN_OVERRIDE_COACH_NAMES = os.getenv("OPENCLAW_CAN_OVERRIDE_COACH_NAMES
 )
 # Brave Search API (news/coach enrichment)
 BRAVE_SEARCH_API_KEY = (os.getenv("BRAVE_SEARCH_API_KEY") or "").strip() or None
-BRAVE_SEARCH_BASE_URL = (os.getenv("BRAVE_SEARCH_BASE_URL") or "https://api.search.brave.com/res/v1/web/search").strip()
+_BRAVE_SEARCH_BASE_URL_RAW = (
+    os.getenv("BRAVE_SEARCH_BASE_URL") or "https://api.search.brave.com/res/v1/web/search"
+).strip().rstrip("/")
+# Accept bare host in .env; Brave web search lives under /res/v1/web/search.
+if _BRAVE_SEARCH_BASE_URL_RAW.endswith("/res/v1/web/search"):
+    BRAVE_SEARCH_BASE_URL = _BRAVE_SEARCH_BASE_URL_RAW
+elif _BRAVE_SEARCH_BASE_URL_RAW.endswith("api.search.brave.com"):
+    BRAVE_SEARCH_BASE_URL = f"{_BRAVE_SEARCH_BASE_URL_RAW}/res/v1/web/search"
+else:
+    BRAVE_SEARCH_BASE_URL = _BRAVE_SEARCH_BASE_URL_RAW
 BRAVE_SEARCH_TIMEOUT_S = float(os.getenv("BRAVE_SEARCH_TIMEOUT_S", "15"))
 BRAVE_SEARCH_MAX_RESULTS = int(os.getenv("BRAVE_SEARCH_MAX_RESULTS", "8"))
 BRAVE_NEWS_LOOKBACK_HOURS = int(os.getenv("BRAVE_NEWS_LOOKBACK_HOURS", "72"))
@@ -98,6 +107,13 @@ BRAVE_NEWS_INCLUDE_LINEUP_TERMS = os.getenv("BRAVE_NEWS_INCLUDE_LINEUP_TERMS", "
 BRAVE_COACH_HISTORY_LOOKBACK_DAYS = int(os.getenv("BRAVE_COACH_HISTORY_LOOKBACK_DAYS", "365"))
 BRAVE_COACH_H2H_LOOKBACK_DAYS = int(os.getenv("BRAVE_COACH_H2H_LOOKBACK_DAYS", "730"))
 BRAVE_COACH_QUOTES_LOOKBACK_DAYS = int(os.getenv("BRAVE_COACH_QUOTES_LOOKBACK_DAYS", "14"))
+BRAVE_NEWS_CACHE_ENABLED = os.getenv("BRAVE_NEWS_CACHE_ENABLED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+BRAVE_NEWS_CACHE_MAX_AGE_MINUTES = int(os.getenv("BRAVE_NEWS_CACHE_MAX_AGE_MINUTES", "45"))
 NEWS_REFRESH_MAX_AGE_MINUTES = int(os.getenv("NEWS_REFRESH_MAX_AGE_MINUTES", "45"))
 NEWS_REFRESH_PRE_KICKOFF_WINDOW_MINUTES = int(os.getenv("NEWS_REFRESH_PRE_KICKOFF_WINDOW_MINUTES", "180"))
 # OpenClaw bridge — stable JSON enrichment API (preferred over raw gateway when set)
@@ -179,10 +195,17 @@ FOOTBALL_DATA_REQUEST_DELAY = 6.5  # free tier: 10 req/min → 6s между з�
 API_FOOTBALL_REQUEST_DELAY = 1.0
 CACHE_TTL_SECONDS = 6 * 3600  # 6 часов
 
-EXPRESS_MIN_PROBABILITY = 0.72
-EXPRESS_MIN_ODDS = 1.15
-EXPRESS_MAX_ODDS = 2.8
-EXPRESS_MIN_LEG_ODDS = 1.22
+EXPRESS_MIN_PROBABILITY = float(os.getenv("EXPRESS_MIN_PROBABILITY", "0.72"))
+EXPRESS_MIN_ODDS = float(os.getenv("EXPRESS_MIN_ODDS", "1.15"))
+EXPRESS_MAX_ODDS = float(os.getenv("EXPRESS_MAX_ODDS", "2.8"))
+EXPRESS_MIN_LEG_ODDS = float(os.getenv("EXPRESS_MIN_LEG_ODDS", "1.22"))
+
+# Post-calibration selection policy (2026-06 wave tuning; env-overridable).
+HOME_NOT_LOSE_MARKET_PENALTY = float(os.getenv("HOME_NOT_LOSE_MARKET_PENALTY", "0.04"))
+MARKET_CLOSE_SCORE_GAP = float(os.getenv("MARKET_CLOSE_SCORE_GAP", "0.03"))
+HOME_NOT_LOSE_EXPRESS_PROB_BONUS = float(os.getenv("HOME_NOT_LOSE_EXPRESS_PROB_BONUS", "0.02"))
+EXPRESS_SELECTION_CONFIDENCE_MIN = float(os.getenv("EXPRESS_SELECTION_CONFIDENCE_MIN", "0.63"))
+EXPRESS_OVERCONFIDENCE_PROB_CAP = float(os.getenv("EXPRESS_OVERCONFIDENCE_PROB_CAP", "0.78"))
 
 # Best-market ranking: downweight very short prices (1X at ~1.07 etc.)
 BEST_MARKET_MIN_USEFUL_ODDS = 1.28
