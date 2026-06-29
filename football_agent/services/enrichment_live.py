@@ -32,7 +32,10 @@ from football_agent.openclaw_context.service import OpenClawContextIngestionServ
 from football_agent.services.enrichment_config import (
     EnrichmentRouting,
     enrichment_uses_bridge,
+    is_direct_gateway_url,
     resolve_enrichment_routing,
+    resolve_enrichment_routing_with_fallback,
+    resolve_legacy_openclaw_gateway_url,
 )
 from football_agent.services.enrichment_contract import (
     ENRICHMENT_CONTEXT_PATH,
@@ -123,13 +126,78 @@ def _fetch_context_split(
     routing: EnrichmentRouting,
     token: str,
     api_key: Optional[str],
+    *,
+    facts: Optional[FlashscoreMatchFacts] = None,
+    home_override: Optional[str] = None,
+    away_override: Optional[str] = None,
+    date_override: Optional[str] = None,
+    competition_override: Optional[str] = None,
+    match_url_override: Optional[str] = None,
+    transport: Optional[str] = None,
 ) -> Tuple[Optional[OpenClawMatchContext], str, List[str]]:
     warnings: List[str] = []
     if not routing.context_base_url:
         return None, SOURCE_SKIPPED_NOT_CONFIGURED, warnings
+
+    base = routing.context_base_url
+    use_direct = transport == "direct_gateway" or is_direct_gateway_url(base)
+    if use_direct and facts is not None:
+        from football_agent.services.direct_gateway_enrichment import (
+            fetch_context_via_direct_gateway,
+            fetch_context_via_inprocess_bridge,
+        )
+
+        bridge_mode = (config.OPENCLAW_BRIDGE_MODE or "prototype").strip().lower()
+        if bridge_mode == "prototype":
+            ctx, status, ib_warnings = fetch_context_via_inprocess_bridge(
+                facts,
+                gateway_url=base,
+                api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
+                home_override=home_override,
+                away_override=away_override,
+                date_override=date_override,
+                competition_override=competition_override,
+                match_url_override=match_url_override,
+            )
+            ib_warnings.append("enrichment_transport_override:inprocess_bridge")
+            return ctx, status, ib_warnings
+
+        ctx, status, dg_warnings = fetch_context_via_direct_gateway(
+            base,
+            facts,
+            api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
+            home_override=home_override,
+            away_override=away_override,
+            date_override=date_override,
+            competition_override=competition_override,
+            match_url_override=match_url_override,
+        )
+        if status != SOURCE_FAILED:
+            return ctx, status, dg_warnings
+        if any(
+            token in w
+            for w in dg_warnings
+            for token in ("direct_gateway_context_failed", "backend_endpoint_not_found")
+        ):
+            ctx2, status2, ib_warnings = fetch_context_via_inprocess_bridge(
+                facts,
+                gateway_url=base,
+                api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
+                home_override=home_override,
+                away_override=away_override,
+                date_override=date_override,
+                competition_override=competition_override,
+                match_url_override=match_url_override,
+            )
+            combined = dg_warnings + ib_warnings + ["direct_gateway_chat_failed_inprocess_bridge_fallback"]
+            if status2 != SOURCE_FAILED:
+                combined.append("enrichment_transport_override:inprocess_bridge")
+                return ctx2, status2, combined
+        return ctx, status, dg_warnings
+
     try:
         adapter = HttpOpenClawContextAdapter(
-            routing.context_base_url,
+            base,
             api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
             timeout_s=config.OPENCLAW_CONTEXT_TIMEOUT_S,
             context_path=ENRICHMENT_CONTEXT_PATH,
@@ -143,13 +211,57 @@ def _fetch_context_split(
         reason = classify_http_error_message(str(exc))
         warnings.append(f"openclaw_context_fetch_failed:{reason}")
         warnings.append(f"openclaw_context_detail: {str(exc)[:120]}")
+        if facts is not None and _should_fallback_to_direct_gateway(str(exc)):
+            from football_agent.services.direct_gateway_enrichment import fetch_context_via_direct_gateway
+
+            gateway = resolve_legacy_openclaw_gateway_url()
+            if gateway:
+                warnings.append("openclaw_context_bridge_fallback_direct_gateway")
+                ctx, status, dg_warnings = fetch_context_via_direct_gateway(
+                    gateway,
+                    facts,
+                    api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
+                    home_override=home_override,
+                    away_override=away_override,
+                    date_override=date_override,
+                    competition_override=competition_override,
+                    match_url_override=match_url_override,
+                )
+                warnings.extend(dg_warnings)
+                return ctx, status, warnings
         return None, SOURCE_FAILED, warnings
+
+
+def _should_fallback_to_direct_gateway(error_message: str) -> bool:
+    low = (error_message or "").lower()
+    return any(
+        token in low
+        for token in (
+            "html",
+            "invalid json",
+            "connection",
+            "refused",
+            "unavailable",
+            "timeout",
+            "404",
+            "502",
+            "503",
+        )
+    )
 
 
 def _fetch_odds_split(
     routing: EnrichmentRouting,
     token: str,
     api_key: Optional[str],
+    *,
+    facts: Optional[FlashscoreMatchFacts] = None,
+    home_override: Optional[str] = None,
+    away_override: Optional[str] = None,
+    date_override: Optional[str] = None,
+    competition_override: Optional[str] = None,
+    match_url_override: Optional[str] = None,
+    transport: Optional[str] = None,
 ) -> Tuple[Optional[MatchOddsContext], str, List[str]]:
     warnings: List[str] = []
     if not routing.odds_base_url:
@@ -161,6 +273,24 @@ def _fetch_odds_split(
             else:
                 warnings.append("odds_not_configured:no_url")
         return None, SOURCE_SKIPPED_NOT_CONFIGURED, warnings
+
+    base = routing.odds_base_url
+    use_direct = transport == "direct_gateway" or is_direct_gateway_url(base)
+    if use_direct and facts is not None:
+        from football_agent.services.direct_gateway_enrichment import fetch_odds_via_direct_gateway
+
+        ctx, status, dg_warnings = fetch_odds_via_direct_gateway(
+            base,
+            facts,
+            api_key=api_key or config.OPENCLAW_CONTEXT_API_KEY,
+            home_override=home_override,
+            away_override=away_override,
+            date_override=date_override,
+            competition_override=competition_override,
+            match_url_override=match_url_override,
+        )
+        warnings.extend(dg_warnings)
+        return ctx, status, warnings
 
     odds_key = api_key or config.ODDS_SERVICE_API_KEY or config.OPENCLAW_CONTEXT_API_KEY
     try:
@@ -284,13 +414,15 @@ def fetch_enrichment_for_facts(
 
     Returns structured result; never raises.
     """
-    routing = resolve_enrichment_routing(
+    resolution = resolve_enrichment_routing_with_fallback(
         openclaw_url_override=openclaw_url,
         odds_url_override=odds_url,
         skip_openclaw=skip_openclaw,
         skip_odds=skip_odds,
         mode_override=mode_override,
     )
+    routing = resolution.routing
+    transport = resolution.enrichment_backend
     token = _build_query_token(
         facts,
         home_override=home_override,
@@ -301,9 +433,29 @@ def fetch_enrichment_for_facts(
     )
 
     sources: Dict[str, str] = {}
-    warnings: List[str] = []
+    warnings: List[str] = list(resolution.warnings)
     ctx: Optional[OpenClawMatchContext] = None
     odds: Optional[MatchOddsContext] = None
+
+    if transport == "unavailable" and routing.openclaw_configured and not skip_openclaw:
+        warnings.append("openclaw_enrichment_backend_unavailable")
+        sources["openclaw"] = SOURCE_FAILED
+        sources["odds"] = SOURCE_SKIPPED if skip_odds else SOURCE_FAILED
+        backend = _backend_label(routing, openclaw_url_override=openclaw_url, transport=transport)
+        sources["enrichment_backend"] = backend
+        sources["enrichment_base_url_used"] = resolution.base_url_used or ""
+        sources["enrichment_transport"] = transport
+        return _complete_enrichment_result(
+            facts=facts,
+            ctx=None,
+            odds=None,
+            sources=sources,
+            warnings=warnings,
+            routing=routing,
+            openclaw_url=openclaw_url,
+            transport=transport,
+            base_url_used=resolution.base_url_used,
+        )
 
     if not routing.configured:
         sources = {"openclaw": SOURCE_SKIPPED_NOT_CONFIGURED, "odds": SOURCE_SKIPPED_NOT_CONFIGURED}
@@ -322,6 +474,8 @@ def fetch_enrichment_for_facts(
             warnings=warnings,
             routing=routing,
             openclaw_url=openclaw_url,
+            transport=transport,
+            base_url_used=resolution.base_url_used,
         )
 
     if skip_openclaw and skip_odds:
@@ -334,6 +488,8 @@ def fetch_enrichment_for_facts(
             warnings=warnings,
             routing=routing,
             openclaw_url=openclaw_url,
+            transport=transport,
+            base_url_used=resolution.base_url_used,
         )
 
     if routing.enrichment_mode == ENRICHMENT_MODE_UNIFIED and routing.openclaw_configured and not skip_openclaw:
@@ -351,19 +507,43 @@ def fetch_enrichment_for_facts(
                 warnings=warnings,
                 routing=routing,
                 openclaw_url=openclaw_url,
+                transport=transport,
+                base_url_used=resolution.base_url_used,
             )
         logger.info("Unified enrichment transport failed — falling back to split endpoints")
         warnings.append("enrichment_unified_fallback_split")
 
     if not skip_openclaw:
-        ctx, oc_status, oc_warnings = _fetch_context_split(routing, token, openclaw_api_key)
+        ctx, oc_status, oc_warnings = _fetch_context_split(
+            routing,
+            token,
+            openclaw_api_key,
+            facts=facts,
+            home_override=home_override,
+            away_override=away_override,
+            date_override=date_override,
+            competition_override=competition_override,
+            match_url_override=match_url_override,
+            transport=transport,
+        )
         sources["openclaw"] = oc_status
         warnings.extend(oc_warnings)
     else:
         sources["openclaw"] = SOURCE_SKIPPED
 
     if not skip_odds:
-        odds, odds_status, odds_warnings = _fetch_odds_split(routing, token, odds_api_key)
+        odds, odds_status, odds_warnings = _fetch_odds_split(
+            routing,
+            token,
+            odds_api_key,
+            facts=facts,
+            home_override=home_override,
+            away_override=away_override,
+            date_override=date_override,
+            competition_override=competition_override,
+            match_url_override=match_url_override,
+            transport=transport,
+        )
         sources["odds"] = odds_status
         warnings.extend(odds_warnings)
     else:
@@ -377,6 +557,8 @@ def fetch_enrichment_for_facts(
         warnings=warnings,
         routing=routing,
         openclaw_url=openclaw_url,
+        transport=transport,
+        base_url_used=resolution.base_url_used,
     )
 
 
@@ -389,13 +571,22 @@ def _complete_enrichment_result(
     warnings: List[str],
     routing: EnrichmentRouting,
     openclaw_url: Optional[str],
+    transport: Optional[str] = None,
+    base_url_used: Optional[str] = None,
 ) -> EnrichmentFetchResult:
     _annotate_partial_enrichment(ctx, odds, sources, warnings, routing)
-    news = _fetch_brave_news_if_enabled(facts, ctx, warnings, sources)
-    backend = _backend_label(routing, openclaw_url_override=openclaw_url)
-    if backend == "none" and sources.get("brave_news") in (SOURCE_OK, SOURCE_PARTIAL):
+    news = _fetch_enrichment_news(facts, ctx, warnings, sources)
+    backend = _backend_label(routing, openclaw_url_override=openclaw_url, transport=transport)
+    if any(w.startswith("enrichment_transport_override:inprocess_bridge") for w in warnings):
+        backend = "inprocess_bridge"
+        transport = "inprocess_bridge"
+    if backend in ("none", "unavailable") and sources.get("brave_news") in (SOURCE_OK, SOURCE_PARTIAL, "api_error"):
         backend = "brave"
     sources["enrichment_backend"] = backend
+    if base_url_used:
+        sources["enrichment_base_url_used"] = base_url_used
+    if transport:
+        sources["enrichment_transport"] = transport
     return EnrichmentFetchResult(
         context=ctx,
         odds=odds,
@@ -404,6 +595,34 @@ def _complete_enrichment_result(
         warnings=warnings,
         routing=routing,
     )
+
+
+def _fetch_enrichment_news(
+    facts: FlashscoreMatchFacts,
+    openclaw_ctx: Optional[OpenClawMatchContext],
+    warnings: List[str],
+    sources: Dict[str, str],
+) -> Optional[MatchNewsContext]:
+    """Primary OpenClaw path; Brave only when explicitly enabled as fallback."""
+    from football_agent.services.openclaw_primary_enrichment import (
+        brave_fallback_allowed,
+        openclaw_primary_enrichment,
+    )
+
+    if openclaw_primary_enrichment() and openclaw_ctx is not None:
+        sources["openclaw_news"] = SOURCE_OK if openclaw_ctx.news else SOURCE_PARTIAL
+        sources["enrichment_news_source"] = "openclaw"
+        if not brave_fallback_allowed():
+            sources["brave_news"] = SOURCE_SKIPPED
+            warnings.append("brave_skipped:openclaw_primary")
+            return None
+
+    if not brave_fallback_allowed():
+        sources["brave_news"] = SOURCE_SKIPPED_NOT_CONFIGURED
+        sources["enrichment_news_source"] = "openclaw" if openclaw_ctx else "none"
+        return None
+
+    return _fetch_brave_news_if_enabled(facts, openclaw_ctx, warnings, sources)
 
 
 def _fetch_brave_news_if_enabled(
@@ -417,6 +636,7 @@ def _fetch_brave_news_if_enabled(
     if not brave_news_enabled():
         sources["brave_news"] = SOURCE_SKIPPED_NOT_CONFIGURED
         return None
+    sources["enrichment_news_source"] = "brave_fallback"
     try:
         news = enrich_match_news_from_brave(facts, openclaw_context=openclaw_ctx)
         if news is None:
@@ -430,8 +650,16 @@ def _fetch_brave_news_if_enabled(
             sources["brave_news"] = SOURCE_FAILED
             warnings.append("brave_news_empty")
         warnings.extend(news.warnings or [])
+        if any("brave_quota_exceeded" in w for w in warnings):
+            sources["brave_news"] = "api_error"
         return news
     except Exception as exc:
+        from football_agent.services.brave_search_client import is_brave_quota_error
+
+        if is_brave_quota_error(str(exc)):
+            warnings.append("brave_quota_exceeded")
+            sources["brave_news"] = "api_error"
+            return None
         warnings.append(f"brave_news_fetch_failed:{exc}")
         sources["brave_news"] = SOURCE_FAILED
         if not config.OPENCLAW_FAIL_SOFT:
@@ -439,9 +667,24 @@ def _fetch_brave_news_if_enabled(
         return None
 
 
-def _backend_label(routing: EnrichmentRouting, *, openclaw_url_override: Optional[str] = None) -> str:
+def _backend_label(
+    routing: EnrichmentRouting,
+    *,
+    openclaw_url_override: Optional[str] = None,
+    transport: Optional[str] = None,
+) -> str:
+    if transport == "direct_gateway":
+        return "direct_gateway"
+    if transport == "inprocess_bridge":
+        return "inprocess_bridge"
+    if transport == "bridge":
+        return "bridge"
+    if transport == "unavailable":
+        return "unavailable"
     if enrichment_uses_bridge(base_url=openclaw_url_override):
-        return "openclaw_bridge"
+        return "bridge"
+    if is_direct_gateway_url(routing.openclaw_base_url):
+        return "direct_gateway"
     if routing.openclaw_configured and routing.odds_separate_service:
         return "openclaw+odds_separate"
     if routing.openclaw_configured:

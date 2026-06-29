@@ -51,7 +51,22 @@ USE_OPENCLAW_COACH_CONTEXT = os.getenv("USE_OPENCLAW_COACH_CONTEXT", "false").st
     "yes",
     "on",
 )
+# OpenClaw owns scorer-critical enrichment (squads/coaches/news/schedule signals).
+# When true, Brave runs only if USE_BRAVE_NEWS_ENRICHMENT or USE_BRAVE_NEWS_FALLBACK is explicitly set.
+OPENCLAW_PRIMARY_ENRICHMENT = os.getenv("OPENCLAW_PRIMARY_ENRICHMENT", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 USE_BRAVE_NEWS_ENRICHMENT = os.getenv("USE_BRAVE_NEWS_ENRICHMENT", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+# Explicit optional fallback when OpenClaw primary is on (deprecated alias: USE_BRAVE_NEWS_ENRICHMENT).
+USE_BRAVE_NEWS_FALLBACK = os.getenv("USE_BRAVE_NEWS_FALLBACK", "false").strip().lower() in (
     "1",
     "true",
     "yes",

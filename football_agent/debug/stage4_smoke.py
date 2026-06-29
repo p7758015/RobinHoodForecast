@@ -8,6 +8,7 @@ Examples::
 
   python -m football_agent.debug.stage4_smoke --check-services
   python -m football_agent.debug.stage4_smoke --scenario flashscore-only --match avai --json
+  python -m football_agent.debug.stage4_smoke --scenario flashscore-openclaw --match-url "https://www.flashscore.com/match/..." --json
   python -m football_agent.debug.stage4_smoke --scenario flashscore-openclaw --match all --json
   python -m football_agent.debug.stage4_smoke --scenario persist-eval --match avai --db-path football_agent/data/live_stage4.db
 """
@@ -21,8 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from football_agent.debug.context_smoke_report import build_context_smoke_report
 from football_agent.debug.live_analysis_trace import build_live_summary_from_pipeline
-from football_agent.debug.live_service_health import check_live_services
+from football_agent.debug.live_service_health import summarize_live_services
 from football_agent.services.live_flashscore_pipeline import LiveFlashscorePipeline
 from football_agent.services.offline_evaluation_service_v2 import OfflineEvaluationServiceV2
 
@@ -101,6 +103,40 @@ def _resolve_matches(match_key: str) -> List[tuple[str, Dict[str, str]]]:
     if key not in STAGE4_SMOKE_MATCHES:
         raise SystemExit(f"Unknown --match {match_key!r}. Choose: {', '.join(STAGE4_SMOKE_MATCHES)} or all")
     return [(key, STAGE4_SMOKE_MATCHES[key])]
+
+
+def run_smoke_url(
+    *,
+    scenario_name: str,
+    match_url: str,
+    as_json: bool = False,
+) -> Dict[str, Any]:
+    if scenario_name not in SCENARIOS:
+        raise SystemExit(f"Unknown scenario {scenario_name!r}. Choose: {', '.join(SCENARIOS)}")
+    scenario = SCENARIOS[scenario_name]
+    skip_oc = scenario.skip_openclaw and not scenario.use_openclaw
+    services = summarize_live_services()
+    pipeline = LiveFlashscorePipeline(
+        skip_openclaw=skip_oc,
+        openclaw_url=scenario.openclaw_url,
+    )
+    result = pipeline.analyze_flashscore_url(match_url)
+    summary = build_live_summary_from_pipeline(
+        result,
+        openclaw_requested=scenario.use_openclaw,
+    )
+    report = build_context_smoke_report(
+        match_url=match_url,
+        scenario=scenario_name,
+        services=services,
+        pipeline_summary=summary,
+    )
+    exit_code = 0 if result.success else 1
+    if as_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(report.get("human_summary") or "")
+    return {"payload": report, "exit_code": exit_code}
 
 
 def run_smoke(
@@ -188,9 +224,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Smoke scenario (default: flashscore-only).",
     )
     parser.add_argument(
+        "--match-url",
+        help="Arbitrary Flashscore URL (overrides --match preset keys).",
+    )
+    parser.add_argument(
         "--match",
         default="avai",
-        help="Match key: avai | goias | athletic | all (default: avai).",
+        help="Match key: avai | goias | athletic | all (default: avai). Ignored when --match-url is set.",
     )
     parser.add_argument(
         "--db-path",
@@ -208,15 +248,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     if args.check_services:
-        health = [h.to_dict() for h in check_live_services()]
-        payload = {"services": health, "all_ok": all(h["ok"] for h in health)}
+        payload = summarize_live_services()
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            for h in health:
-                status = "OK" if h["ok"] else "FAIL"
-                print(f"{h['name']}: {status} {h.get('url') or h.get('error')}")
-        return 0 if payload["all_ok"] else 1
+            for h in payload.get("services") or []:
+                status = "OK" if h.get("ok") else "FAIL"
+                print(f"{h.get('name')}: {status} {h.get('url') or h.get('error')}")
+            print(
+                f"effective_openclaw={payload.get('openclaw_effective_backend')} "
+                f"all_ok={payload.get('all_ok')}"
+            )
+        return 0 if payload.get("all_ok") else 1
+
+    if args.match_url:
+        out = run_smoke_url(
+            scenario_name=args.scenario,
+            match_url=args.match_url.strip(),
+            as_json=args.json,
+        )
+        if args.write_report:
+            path = Path(args.write_report)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(out["payload"], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            if not args.json:
+                print(f"Report written: {path}")
+        return int(out["exit_code"])
 
     out = run_smoke(
         scenario_name=args.scenario,

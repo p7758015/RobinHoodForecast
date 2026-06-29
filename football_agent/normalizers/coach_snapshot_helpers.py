@@ -30,6 +30,12 @@ def clip01(value: float) -> float:
 
 
 def _resolve_coach_name(merged: MergedMatchAnalysisContext, *, side: str) -> str:
+    oc_side = _openclaw_coach_side(merged, side=side)
+    if oc_side is not None and oc_side.coach_name:
+        name = str(oc_side.coach_name).strip()
+        if name and name.lower() != "unknown":
+            return name
+
     facts = merged.flashscore_facts
     if facts.squad_raw:
         if side == "home" and facts.squad_raw.coach_name_home:
@@ -92,6 +98,7 @@ def _infer_matches_in_charge(
 
 def _derive_tenure_flags(
     *,
+    merged: MergedMatchAnalysisContext,
     matches_in_charge: Optional[int],
     days_in_charge: Optional[int],
     recent_change: bool,
@@ -111,7 +118,7 @@ def _derive_tenure_flags(
     if recent_change and not is_first and (days_in_charge is None or days_in_charge <= 21):
         is_first = True
 
-    if brave is not None:
+    if brave is not None and _use_brave_coach_hints(merged):
         quotes = list(brave.home_coach_recent_quotes or []) + list(brave.away_coach_recent_quotes or [])
         blob = "\n".join(quotes)
         if _FIRST_MATCH_RE.search(blob) or _NEW_APPOINTMENT_RE.search(blob):
@@ -217,6 +224,17 @@ def _coach_start_date(days_in_charge: Optional[int], kickoff: Optional[date]) ->
         return None
 
 
+def _use_brave_coach_hints(merged: MergedMatchAnalysisContext) -> bool:
+    from football_agent.services.openclaw_primary_enrichment import (
+        brave_fallback_allowed,
+        openclaw_primary_enrichment,
+    )
+
+    if openclaw_primary_enrichment() and merged.openclaw_context is not None:
+        return brave_fallback_allowed()
+    return merged.news_context is not None
+
+
 def coach_context_from_merged(
     merged: MergedMatchAnalysisContext,
     team_ref: TeamRefV2,
@@ -224,13 +242,24 @@ def coach_context_from_merged(
     side: str,
 ) -> CoachContextV2:
     name = _resolve_coach_name(merged, side=side)
-    brave = _brave_coach_block(merged)
+    brave = _brave_coach_block(merged) if _use_brave_coach_hints(merged) else None
     oc_side = _openclaw_coach_side(merged, side=side)
 
     days_in_charge: Optional[int] = None
     status = "unknown"
 
-    if brave is not None:
+    if oc_side is not None:
+        if oc_side.coach_name and name in ("Unknown", ""):
+            name = str(oc_side.coach_name)
+        from football_agent.openclaw_context.snapshot_mapper import coach_tenure_from_openclaw
+
+        oc_days, oc_first, _recent = coach_tenure_from_openclaw(oc_side)
+        if oc_days is not None:
+            days_in_charge = oc_days
+        if oc_side.pressure_summary and "interim" in oc_side.pressure_summary.lower():
+            status = "interim"
+
+    if brave is not None and days_in_charge is None:
         if side == "home":
             news_name = brave.news.home_coach_name or brave.home_coach_name
             if news_name and name in ("Unknown", ""):
@@ -244,13 +273,10 @@ def coach_context_from_merged(
             days_in_charge = brave.stat.away_coach_tenure_days or brave.away_coach_tenure_days
             status = str(brave.news.away_coach_status or brave.away_coach_status or "unknown")
 
-    if oc_side is not None:
-        if oc_side.coach_name and name in ("Unknown", ""):
-            name = str(oc_side.coach_name)
-        if days_in_charge is None and oc_side.tenure_summary:
-            m = re.search(r"(\d+)\s+days?", oc_side.tenure_summary, re.I)
-            if m:
-                days_in_charge = int(m.group(1))
+    if oc_side is not None and days_in_charge is None and oc_side.tenure_summary:
+        m = re.search(r"(\d+)\s+days?", oc_side.tenure_summary, re.I)
+        if m:
+            days_in_charge = int(m.group(1))
 
     recent_change = bool(oc_side and oc_side.recent_change_flag)
     matches_in_charge = _infer_matches_in_charge(
@@ -261,6 +287,7 @@ def coach_context_from_merged(
     )
 
     is_first, is_bounce, tenure = _derive_tenure_flags(
+        merged=merged,
         matches_in_charge=matches_in_charge,
         days_in_charge=days_in_charge,
         recent_change=recent_change,
@@ -269,8 +296,12 @@ def coach_context_from_merged(
     )
 
     rotation_signals: list[str] = []
-    if merged.news_context and merged.news_context.general_news:
-        rotation_signals = list(merged.news_context.general_news.predicted_lineup_signals or [])
+    if merged.openclaw_context and merged.openclaw_context.squad_context:
+        oc_sq = merged.openclaw_context.squad_context
+        side_sq = oc_sq.home if side == "home" else oc_sq.away
+        rotation_signals = list(side_sq.expected_rotation_notes or [])
+    if merged.news_context and merged.news_context.general_news and _use_brave_coach_hints(merged):
+        rotation_signals.extend(list(merged.news_context.general_news.predicted_lineup_signals or []))
 
     global_strength = _coach_global_strength(
         days_in_charge=days_in_charge,

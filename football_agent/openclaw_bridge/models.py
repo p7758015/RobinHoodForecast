@@ -29,6 +29,8 @@ class BridgeMatchInput:
     home_form_summary: Optional[str] = None
     away_form_summary: Optional[str] = None
     standings_summary: Optional[str] = None
+    coach_name_home: Optional[str] = None
+    coach_name_away: Optional[str] = None
 
     @classmethod
     def from_params(cls, params: Dict[str, str]) -> "BridgeMatchInput":

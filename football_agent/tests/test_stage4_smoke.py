@@ -43,8 +43,14 @@ def test_run_smoke_flashscore_only(mock_pipeline_cls) -> None:
     scored.prediction.best_market = None
     scored.prediction.market_predictions = []
     scored.prediction.overall_confidence_score = 0.5
-    scored.prediction.express_safety.model_dump.return_value = {}
+    scored.prediction.analysis_mode = "full_scoring"
+    scored.prediction.prediction_mode = "league_scored"
+    scored.prediction.prediction_summary = "test"
+    scored.prediction.parked_context = None
+    scored.routing_decision = None
     scored.scoring_warnings = []
+    scored.scoring_skipped = True
+    scored.scorer_name = "test"
 
     mock_pipeline_cls.return_value.analyze_flashscore_url.return_value = LivePipelineResult(
         success=True,
@@ -53,7 +59,7 @@ def test_run_smoke_flashscore_only(mock_pipeline_cls) -> None:
         sources={"flashscore": "ok", "openclaw": "skipped_not_configured"},
     )
 
-    out = run_smoke(scenario_name="flashscore-only", match_key="avai", as_json=True)
+    out = run_smoke(scenario_name="flashscore-only", match_key="avai", as_json=False)
     assert out["exit_code"] == 0
     assert out["payload"]["all_success"] is True
     assert mock_pipeline_cls.return_value.analyze_flashscore_url.called
@@ -61,14 +67,19 @@ def test_run_smoke_flashscore_only(mock_pipeline_cls) -> None:
 
 def test_main_check_services_exit_code() -> None:
     with patch(
-        "football_agent.debug.stage4_smoke.check_live_services",
-        return_value=[
-            ServiceHealth("flashscore_scraper", "http://localhost:3000/health", ok=True),
-            ServiceHealth("openclaw_gateway", "", ok=False, error="not configured"),
-        ],
+        "football_agent.debug.stage4_smoke.summarize_live_services",
+        return_value={
+            "services": [
+                {"name": "flashscore_scraper", "url": "http://localhost:3000/health", "ok": True},
+                {"name": "openclaw_bridge", "url": "http://localhost:8787/health", "ok": False},
+                {"name": "openclaw_legacy_gateway", "url": "http://127.0.0.1:18789/health", "ok": True},
+            ],
+            "all_ok": True,
+            "openclaw_effective_backend": "direct_gateway",
+        },
     ):
         code = main(["--check-services"])
-    assert code == 1
+    assert code == 0
 
 
 def test_scenarios_cover_operational_modes() -> None:

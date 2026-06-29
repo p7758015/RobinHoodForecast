@@ -45,6 +45,15 @@ class BraveSearchUnavailableError(BraveSearchError):
     pass
 
 
+class BraveSearchQuotaExceededError(BraveSearchUnavailableError):
+    """Brave subscription usage limit (HTTP 402)."""
+
+
+def is_brave_quota_error(message: str) -> bool:
+    low = (message or "").lower()
+    return "402" in low or "usage_limit" in low or "usage limit exceeded" in low
+
+
 @dataclass
 class BraveSearchHit:
     title: str
@@ -126,6 +135,10 @@ class BraveSearchClient:
                     headers=headers,
                     timeout=self._timeout,
                 )
+                if resp.status_code == 402 or is_brave_quota_error(resp.text):
+                    raise BraveSearchQuotaExceededError(
+                        f"Brave HTTP {resp.status_code}: {resp.text[:300]}",
+                    )
                 if resp.status_code >= 400:
                     raise BraveSearchUnavailableError(
                         f"Brave HTTP {resp.status_code}: {resp.text[:300]}",

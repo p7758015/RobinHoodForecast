@@ -127,8 +127,48 @@ def check_live_services(
     bridge = check_openclaw_bridge(timeout_s=timeout_s)
     if bridge.url:
         probes.append(bridge)
-    probes.append(check_openclaw_gateway(openclaw_url, timeout_s=timeout_s))
-    legacy = check_openclaw_legacy_gateway(timeout_s=timeout_s)
-    if legacy.url and legacy.url != (openclaw_url or resolve_openclaw_base_url() or ""):
-        probes.append(legacy)
+    gateway = check_openclaw_legacy_gateway(timeout_s=timeout_s)
+    if gateway.url:
+        probes.append(gateway)
+    enrichment = check_openclaw_gateway(openclaw_url, timeout_s=timeout_s)
+    if enrichment.url and enrichment.url not in {p.url for p in probes}:
+        probes.append(enrichment)
     return probes
+
+
+def summarize_live_services(
+    *,
+    flashscore_url: Optional[str] = None,
+    openclaw_url: Optional[str] = None,
+    timeout_s: float = 5.0,
+) -> Dict[str, Any]:
+    """
+    Aggregate service probes for operational smoke.
+
+    ``all_ok`` when Flashscore is healthy and at least one OpenClaw path
+    (bridge or direct gateway) responds — bridge down + gateway up is OK.
+    """
+    probes = check_live_services(
+        flashscore_url=flashscore_url,
+        openclaw_url=openclaw_url,
+        timeout_s=timeout_s,
+    )
+    by_name = {p.name: p for p in probes}
+    flashscore_ok = by_name.get("flashscore_scraper", ServiceHealth("flashscore_scraper", "", False)).ok
+    bridge = by_name.get("openclaw_bridge")
+    gateway = by_name.get("openclaw_legacy_gateway") or by_name.get("openclaw_enrichment")
+    bridge_ok = bool(bridge and bridge.ok)
+    gateway_ok = bool(gateway and gateway.ok)
+    openclaw_ok = bridge_ok or gateway_ok
+    effective_backend: Optional[str] = None
+    if bridge_ok:
+        effective_backend = "bridge"
+    elif gateway_ok:
+        effective_backend = "direct_gateway"
+    return {
+        "services": [p.to_dict() for p in probes],
+        "flashscore_ok": flashscore_ok,
+        "openclaw_ok": openclaw_ok,
+        "openclaw_effective_backend": effective_backend,
+        "all_ok": flashscore_ok and openclaw_ok,
+    }

@@ -20,8 +20,10 @@ from football_agent.openclaw_context.models import OpenClawMatchContext
 from football_agent.services.brave_search_client import (
     BraveSearchClient,
     BraveSearchHit,
+    BraveSearchQuotaExceededError,
     BraveSearchUnavailableError,
     filter_hits_by_lookback,
+    is_brave_quota_error,
     rank_and_cap_hits,
 )
 from football_agent.services.brave_news_cache import BraveNewsCache
@@ -131,26 +133,27 @@ def brave_news_enabled() -> bool:
     """
     True when Brave Search enrichment should run.
 
-    Master flag: ``USE_BRAVE_NEWS_ENRICHMENT`` (+ API key).
-    Legacy aliases: ``USE_OPENCLAW_NEWS`` / ``USE_OPENCLAW_COACH_CONTEXT``.
+    Under ``OPENCLAW_PRIMARY_ENRICHMENT`` (default), Brave is **optional fallback only**
+    and requires ``USE_BRAVE_NEWS_ENRICHMENT`` or ``USE_BRAVE_NEWS_FALLBACK``.
+
+    Legacy (non-primary): ``USE_OPENCLAW_NEWS`` / ``USE_OPENCLAW_COACH_CONTEXT`` could
+    trigger Brave — kept for backward compatibility when primary mode is off.
     """
-    if not config.BRAVE_SEARCH_API_KEY:
+    from football_agent.services.openclaw_primary_enrichment import brave_fallback_allowed
+
+    if not brave_fallback_allowed():
         return False
-    return _brave_master_enabled() or _brave_legacy_enabled()
+    return True
 
 
 def brave_coach_context_enabled() -> bool:
-    """Coach block/queries — on by default when master Brave flag is set."""
-    if _brave_master_enabled():
-        return True
-    return bool(config.USE_OPENCLAW_COACH_CONTEXT)
+    """Coach block/queries via Brave — only when Brave fallback is active."""
+    return brave_news_enabled()
 
 
 def brave_general_news_enabled() -> bool:
-    """General news block/queries — on by default when master Brave flag is set."""
-    if _brave_master_enabled():
-        return True
-    return bool(config.USE_OPENCLAW_NEWS)
+    """General news block/queries via Brave — only when Brave fallback is active."""
+    return brave_news_enabled()
 
 
 def _coach_hints_from_openclaw(ctx: Optional[OpenClawMatchContext]) -> tuple[Optional[str], Optional[str]]:
@@ -257,7 +260,10 @@ def enrich_match_news_from_brave(
                 )
                 all_hits.extend(hits)
             except BraveSearchUnavailableError as exc:
-                warnings.append(f"brave_query_failed:{nq.category}:{exc}")
+                if isinstance(exc, BraveSearchQuotaExceededError) or is_brave_quota_error(str(exc)):
+                    warnings.append(f"brave_quota_exceeded:{nq.category}")
+                else:
+                    warnings.append(f"brave_query_failed:{nq.category}:{exc}")
                 logger.debug("Brave query failed %s: %s", nq.query, exc)
                 if not config.OPENCLAW_FAIL_SOFT:
                     raise
@@ -297,12 +303,20 @@ def enrich_match_news_from_brave(
                         search_lang=search_lang,
                     )
                     all_hits.extend(hits)
-                except BraveSearchUnavailableError:
-                    warnings.append(f"brave_coach_pass_failed:{nq.category}")
+                except BraveSearchUnavailableError as exc:
+                    if isinstance(exc, BraveSearchQuotaExceededError) or is_brave_quota_error(str(exc)):
+                        warnings.append(f"brave_quota_exceeded:coach:{nq.category}")
+                    else:
+                        warnings.append(f"brave_coach_pass_failed:{nq.category}")
 
     except BraveSearchUnavailableError as exc:
-        if config.OPENCLAW_FAIL_SOFT:
+        if isinstance(exc, BraveSearchQuotaExceededError) or is_brave_quota_error(str(exc)):
+            warnings.append("brave_quota_exceeded")
+        elif config.OPENCLAW_FAIL_SOFT:
             warnings.append(f"brave_search_unavailable:{exc}")
+        else:
+            raise
+        if config.OPENCLAW_FAIL_SOFT or isinstance(exc, BraveSearchQuotaExceededError):
             return MatchNewsContext(
                 match_id=facts.meta.match_id,
                 home_team=home,

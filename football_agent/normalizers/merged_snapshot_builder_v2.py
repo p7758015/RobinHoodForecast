@@ -160,11 +160,18 @@ class MergedSnapshotBuilderV2:
         rotation_hint = news_rotation_hint(merged)
         kickoff_dt = kickoff
 
+        from football_agent.openclaw_context.snapshot_mapper import (
+            apply_openclaw_squad_overlay,
+            news_context_from_openclaw,
+            schedule_overlay_from_openclaw,
+        )
+
+        oc = merged.openclaw_context
         home_squad = squad_context_from_raw(
             facts.squad_raw,
             home_team,
             side="home",
-            news_context=merged.news_context,
+            news_context=merged.news_context if not _openclaw_primary() else None,
             home_team=facts.meta.home_team_name,
             away_team=facts.meta.away_team_name,
         )
@@ -172,10 +179,16 @@ class MergedSnapshotBuilderV2:
             facts.squad_raw,
             away_team,
             side="away",
-            news_context=merged.news_context,
+            news_context=merged.news_context if not _openclaw_primary() else None,
             home_team=facts.meta.home_team_name,
             away_team=facts.meta.away_team_name,
         )
+        if oc and oc.squad_context:
+            home_squad = apply_openclaw_squad_overlay(home_squad, oc.squad_context.home)
+            away_squad = apply_openclaw_squad_overlay(away_squad, oc.squad_context.away)
+
+        odds_ctx = _odds_context_from_merged(merged, report)
+        news_ctx = _news_context_from_merged(merged)
 
         home_team_ctx = _team_context_from_flashscore(
             facts,
@@ -184,7 +197,8 @@ class MergedSnapshotBuilderV2:
             team_ref=home_team,
             kickoff=kickoff_dt,
             squad=home_squad,
-            news_context=merged.news_context,
+            news_ctx=news_ctx,
+            brave_news=merged.news_context if not _openclaw_primary() else None,
         )
         away_team_ctx = _team_context_from_flashscore(
             facts,
@@ -193,7 +207,8 @@ class MergedSnapshotBuilderV2:
             team_ref=away_team,
             kickoff=kickoff_dt,
             squad=away_squad,
-            news_context=merged.news_context,
+            news_ctx=news_ctx,
+            brave_news=merged.news_context if not _openclaw_primary() else None,
         )
 
         home_coach = coach_context_from_merged(merged, home_team, side="home")
@@ -211,9 +226,18 @@ class MergedSnapshotBuilderV2:
             ),
             away_team,
         )
+        if oc and oc.fatigue_schedule_context:
+            home_schedule = schedule_overlay_from_openclaw(
+                home_schedule,
+                oc.fatigue_schedule_context.home,
+                oc.motivation_narrative.home if oc.motivation_narrative else None,
+            )
+            away_schedule = schedule_overlay_from_openclaw(
+                away_schedule,
+                oc.fatigue_schedule_context.away,
+                oc.motivation_narrative.away if oc.motivation_narrative else None,
+            )
 
-        odds_ctx = _odds_context_from_merged(merged, report)
-        news_ctx = _news_context_from_merged(merged)
         h2h_ctx = h2h_context_from_flashscore(facts.h2h)
         confidence = confidence_breakdown_from_merged(
             merged, odds_ctx, home_coach=home_coach, away_coach=away_coach
@@ -333,20 +357,27 @@ def _team_context_from_flashscore(
     team_ref: TeamRefV2,
     kickoff: datetime,
     squad: SquadContextV2,
-    news_context=None,
+    news_ctx: Optional[NewsContextV2] = None,
+    brave_news=None,
 ) -> TeamContextV2:  # noqa: ANN001
     from football_agent.news_context.factor_mapping import apply_brave_motivation_bias
 
     standings = facts.standings
     form_block = form_block_from_flashscore(facts.form, side=side)
     motivation_block = motivation_block_from_derived(derived, standings, side=side)
-    motivation_block = apply_brave_motivation_bias(
-        motivation_block,
-        news_context,
-        side=side,
-        home_team=facts.meta.home_team_name,
-        away_team=facts.meta.away_team_name,
-    )
+    if brave_news is not None:
+        motivation_block = apply_brave_motivation_bias(
+            motivation_block,
+            brave_news,
+            side=side,
+            home_team=facts.meta.home_team_name,
+            away_team=facts.meta.away_team_name,
+        )
+    elif news_ctx and news_ctx.priority_signals:
+        boost = min(0.12, 0.04 * len(news_ctx.priority_signals[:3]))
+        motivation_block = motivation_block.model_copy(
+            update={"motivation_score": min(1.0, motivation_block.motivation_score + boost)},
+        )
     schedule_mini = schedule_mini_from_raw(facts.schedule_raw, kickoff, side=side)
 
     baseline = 0.5
@@ -433,9 +464,23 @@ def _odds_context_from_merged(merged: MergedMatchAnalysisContext, report: BuildR
     return mapped
 
 
+def _openclaw_primary() -> bool:
+    from football_agent.services.openclaw_primary_enrichment import openclaw_primary_enrichment
+
+    return openclaw_primary_enrichment()
+
+
 def _news_context_from_merged(merged: MergedMatchAnalysisContext) -> NewsContextV2:
+    from football_agent.openclaw_context.snapshot_mapper import news_context_from_openclaw
+
+    ctx = merged.openclaw_context
+    if ctx is not None and (_openclaw_primary() or ctx.news):
+        oc_news = news_context_from_openclaw(ctx)
+        if oc_news.major_news_items or oc_news.priority_signals or oc_news.news_risk_score > 0.25:
+            return oc_news
+
     brave = merged.news_context
-    if brave is not None and brave.general_news is not None:
+    if brave is not None and brave.general_news is not None and not _openclaw_primary():
         gn = brave.general_news
         priority = list(gn.motivation_signals or [])[:3]
         rotation = list(gn.predicted_lineup_signals or [])[:3]
@@ -469,27 +514,7 @@ def _news_context_from_merged(merged: MergedMatchAnalysisContext) -> NewsContext
     if ctx is None or ctx.news is None:
         return NewsContextV2()
 
-    def items(*lists: Iterable[Any]) -> List[Any]:
-        out: List[Any] = []
-        for lst in lists:
-            out.extend(list(lst or []))
-        return out
-
-    raw_items = items(ctx.news.match_news_items, ctx.news.home_news_items, ctx.news.away_news_items)
-    major: List[NewsItemV2] = []
-    for it in raw_items[:10]:
-        major.append(
-            NewsItemV2(
-                title=str(getattr(it, "title", "")),
-                summary=getattr(it, "summary", None),
-                severity=NewsSeverity.MEDIUM,
-                source=getattr(it, "source_name", None),
-                published_at=getattr(it, "published_at", None),
-                relevance_score=0.5,
-            )
-        )
-
-    return NewsContextV2(major_news_items=major)
+    return news_context_from_openclaw(ctx)
 
 
 def _source_tags(merged: MergedMatchAnalysisContext) -> List[str]:
@@ -497,12 +522,14 @@ def _source_tags(merged: MergedMatchAnalysisContext) -> List[str]:
     if merged.openclaw_context is not None:
         tags.append("openclaw_context")
         tags.append(f"openclaw_link:{merged.provenance.match_link_strategy}")
+        if _openclaw_primary():
+            tags.append("openclaw_primary_enrichment")
     else:
         tags.append("openclaw_context:missing")
     if merged.news_context is not None and (merged.news_context.source_count or 0) > 0:
-        tags.append("brave_news_enrichment")
+        tags.append("brave_news_fallback")
     elif merged.news_context is not None:
-        tags.append("brave_news_enrichment:empty")
+        tags.append("brave_news_fallback:empty")
     if merged.odds_context is not None:
         tags.append("odds_v1")
         tags.append(f"odds_link:{merged.provenance.odds_link_strategy}")

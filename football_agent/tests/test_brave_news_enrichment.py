@@ -247,23 +247,20 @@ def test_enrichment_skips_when_disabled(_mock) -> None:
 def test_brave_news_enabled_master_flag_only() -> None:
     from football_agent.services.openclaw_news_enrichment import brave_news_enabled
 
-    with patch("football_agent.services.openclaw_news_enrichment.config") as cfg:
-        cfg.USE_BRAVE_NEWS_ENRICHMENT = True
-        cfg.USE_OPENCLAW_NEWS = False
-        cfg.USE_OPENCLAW_COACH_CONTEXT = False
-        cfg.BRAVE_SEARCH_API_KEY = "key"
-        assert brave_news_enabled() is True
+    with patch("football_agent.services.openclaw_primary_enrichment.config.OPENCLAW_PRIMARY_ENRICHMENT", True):
+        with patch("football_agent.services.openclaw_primary_enrichment.config.USE_BRAVE_NEWS_ENRICHMENT", True):
+            with patch("football_agent.services.openclaw_primary_enrichment.config.BRAVE_SEARCH_API_KEY", "key"):
+                assert brave_news_enabled() is True
 
 
-def test_brave_news_enabled_legacy_flags_without_master() -> None:
+def test_brave_news_enabled_legacy_flags_without_primary() -> None:
     from football_agent.services.openclaw_news_enrichment import brave_news_enabled
 
-    with patch("football_agent.services.openclaw_news_enrichment.config") as cfg:
-        cfg.USE_BRAVE_NEWS_ENRICHMENT = False
-        cfg.USE_OPENCLAW_NEWS = True
-        cfg.USE_OPENCLAW_COACH_CONTEXT = False
-        cfg.BRAVE_SEARCH_API_KEY = "key"
-        assert brave_news_enabled() is True
+    with patch("football_agent.services.openclaw_primary_enrichment.config.OPENCLAW_PRIMARY_ENRICHMENT", False):
+        with patch("football_agent.services.openclaw_primary_enrichment.config.USE_BRAVE_NEWS_ENRICHMENT", False):
+            with patch("football_agent.services.openclaw_primary_enrichment.config.USE_OPENCLAW_NEWS", True):
+                with patch("football_agent.services.openclaw_primary_enrichment.config.BRAVE_SEARCH_API_KEY", "key"):
+                    assert brave_news_enabled() is True
 
 
 def test_brave_coach_and_general_enabled_with_master() -> None:
@@ -272,12 +269,10 @@ def test_brave_coach_and_general_enabled_with_master() -> None:
         brave_general_news_enabled,
     )
 
-    with patch("football_agent.services.openclaw_news_enrichment.config") as cfg:
-        cfg.USE_BRAVE_NEWS_ENRICHMENT = True
-        cfg.USE_OPENCLAW_NEWS = False
-        cfg.USE_OPENCLAW_COACH_CONTEXT = False
-        assert brave_coach_context_enabled() is True
-        assert brave_general_news_enabled() is True
+    with patch("football_agent.services.openclaw_primary_enrichment.config.USE_BRAVE_NEWS_ENRICHMENT", True):
+        with patch("football_agent.services.openclaw_primary_enrichment.config.BRAVE_SEARCH_API_KEY", "key"):
+            assert brave_coach_context_enabled() is True
+            assert brave_general_news_enabled() is True
 
 
 def test_merge_removes_news_context_from_missing() -> None:

@@ -297,6 +297,14 @@ def h2h_context_from_flashscore(h2h) -> H2HContextV2:  # noqa: ANN001
 
 
 def news_rotation_hint(merged: MergedMatchAnalysisContext) -> float:
+    oc = merged.openclaw_context
+    if oc and oc.squad_context:
+        notes = list(oc.squad_context.home.expected_rotation_notes or []) + list(
+            oc.squad_context.away.expected_rotation_notes or [],
+        )
+        if notes:
+            return clip01(0.2 + 0.08 * min(4, len(notes)))
+
     brave = merged.news_context
     if brave is None or brave.general_news is None:
         return 0.0
@@ -305,6 +313,12 @@ def news_rotation_hint(merged: MergedMatchAnalysisContext) -> float:
     if not signals and not fatigue:
         return 0.0
     return clip01(0.15 + 0.1 * min(3, len(signals) + len(fatigue)))
+
+
+def _openclaw_primary_for_conf() -> bool:
+    from football_agent.services.openclaw_primary_enrichment import openclaw_primary_enrichment
+
+    return openclaw_primary_enrichment()
 
 
 def confidence_breakdown_from_merged(
@@ -359,10 +373,20 @@ def confidence_breakdown_from_merged(
             squads_conf = 0.3
         elif squad_has_signal(sq.model_dump()):
             squads_conf = 0.25
-        if merged.news_context and merged.news_context.general_news:
+        if merged.news_context and merged.news_context.general_news and not _openclaw_primary_for_conf():
             gn = merged.news_context.general_news
             if gn.injuries_signals or gn.suspension_signals or gn.predicted_lineup_signals:
                 squads_conf = max(squads_conf, clamp_confidence(0.32 + (merged.news_context.confidence or 0.0) * 0.35))
+
+    from football_agent.openclaw_context.snapshot_mapper import openclaw_confidence_scores
+
+    oc = merged.openclaw_context
+    if oc is not None:
+        oc_conf = openclaw_confidence_scores(oc)
+        squads_conf = max(squads_conf, oc_conf["squads"])
+        coaches_conf_boost = oc_conf["coaches"]
+    else:
+        coaches_conf_boost = 0.0
 
     home_coach_name = _coach_name_for_conf(merged, side="home", coach_ctx=home_coach)
     away_coach_name = _coach_name_for_conf(merged, side="away", coach_ctx=away_coach)
@@ -373,10 +397,12 @@ def confidence_breakdown_from_merged(
         coaches_conf = 0.55
     elif home_coach_name != "Unknown" or away_coach_name != "Unknown":
         coaches_conf = 0.4
-    if merged.news_context and merged.news_context.coach:
+    if merged.news_context and merged.news_context.coach and not _openclaw_primary_for_conf():
         cb = merged.news_context.coach
         if cb.coach_news_confidence:
             coaches_conf = max(coaches_conf, clamp_confidence(cb.coach_news_confidence))
+    if coaches_conf_boost:
+        coaches_conf = max(coaches_conf, coaches_conf_boost)
 
     odds_conf = odds_ctx.odds_confidence if odds_ctx else 0.15
     if merged.odds_context is not None:
@@ -393,15 +419,15 @@ def confidence_breakdown_from_merged(
             q = getattr(mk, field_name, None)
             if q is not None:
                 markets_payload[field_name.upper()] = {"odds_value": q.odds_value}
-        oc, _, _ = odds_confidence({"markets": markets_payload, "market_count": len(markets_payload)})
-        odds_conf = max(odds_conf, oc)
+        oc_odds, _, _ = odds_confidence({"markets": markets_payload, "market_count": len(markets_payload)})
+        odds_conf = max(odds_conf, oc_odds)
 
     news_conf = 0.15
-    if merged.news_context is not None:
+    if merged.news_context is not None and not _openclaw_primary_for_conf():
         if merged.news_context.source_count:
             news_conf = clamp_confidence(merged.news_context.confidence or 0.35)
-        elif merged.openclaw_context and merged.openclaw_context.news:
-            news_conf = 0.35
+    elif oc is not None:
+        news_conf = max(news_conf, openclaw_confidence_scores(oc)["news"])
 
     schedule_conf = 0.15
     if facts.schedule_raw and schedule_has_signal(facts.schedule_raw.model_dump()):
@@ -418,6 +444,8 @@ def confidence_breakdown_from_merged(
         )
         filled += min(2, len(sched.recent_match_dates_home or []) + len(sched.recent_match_dates_away or []))
         schedule_conf = clamp_confidence(0.25 + filled * 0.12)
+    if oc is not None and oc.fatigue_schedule_context:
+        schedule_conf = max(schedule_conf, openclaw_confidence_scores(oc)["schedule"])
 
     h2h_conf = 0.15
     if facts.h2h:
